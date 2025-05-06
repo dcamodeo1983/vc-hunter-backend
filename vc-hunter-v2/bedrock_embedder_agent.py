@@ -6,7 +6,7 @@ from typing import List, Dict
 
 # Optional: switch this to use environment variables or config file if needed
 REGION = "us-east-1"
-MODEL_ID = ""cohere.embed-english-v1""
+MODEL_ID = "cohere.embed-english-v1"
 
 def get_bedrock_client():
     """

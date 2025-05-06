@@ -55,4 +55,4 @@ def embed_all(jsonl_path: str, output_path: str):
     print(f"✅ Saved {len(embeddings)} embeddings to {output_path}")
 
 # Example usage (uncomment to run standalone)
-# embed_all("data/raw/vc_scraped_data.jsonl", "data/embeddings/vc_embeddings.json")
+  embed_all("data/raw/vc_scraped_data.jsonl", "data/embeddings/vc_embeddings.json")

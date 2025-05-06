@@ -19,7 +19,7 @@ def embed_text(text: str) -> List[float]:
     Sends a string to the Titan embedding model and returns the embedding vector.
     """
     client = get_bedrock_client()
-    payload = json.dumps({"inputText": text})
+    payload = json.dumps({"input": text})  # ✅ FIXED KEY
 
     response = client.invoke_model(
         modelId=MODEL_ID,

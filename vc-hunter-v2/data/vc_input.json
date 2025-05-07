@@ -1,0 +1,83 @@
+[
+  {
+    "name": "8VC",
+    "url": "https://www.8vc.com",
+    "portfolio_urls": [
+      "https://www.ramp.com",
+      "https://www.salesforce.com",
+      "https://www.oculus.com",
+      "https://www.palantir.com",
+      "https://www.asana.com",
+      "https://www.guardanthealth.com",
+      "https://www.addepar.com",
+      "https://www.anduril.com"
+    ]
+  },
+  {
+    "name": "FoundersFund",
+    "url": "https://foundersfund.com",
+    "portfolio_urls": [
+      "https://www.rippling.com",
+      "https://www.neuralink.com",
+      "https://www.affirm.com",
+      "https://www.ramp.com",
+      "https://www.flexport.com",
+      "https://www.spotify.com",
+      "https://www.faire.com",
+      "https://www.scale.com",
+      "https://www.openai.com",
+      "https://www.cognition-labs.com",
+      "https://www.figma.com",
+      "https://www.workrise.com",
+      "https://www.boringcompany.com",
+      "https://www.psiquantum.com",
+      "https://www.lyft.com"
+    ]
+  },
+  {
+    "name": "SequoiaCapital",
+    "url": "https://www.sequoiacap.com",
+    "portfolio_urls": [
+      "https://www.nvidia.com",
+      "https://www.reddit.com",
+      "https://www.instacart.com",
+      "https://www.youtube.com",
+      "https://www.apple.com",
+      "https://www.dropbox.com",
+      "https://www.doordash.com"
+    ]
+  },
+  {
+    "name": "Greylock",
+    "url": "https://greylock.com",
+    "portfolio_urls": [
+      "https://aurora.tech"
+    ]
+  },
+  {
+    "name": "XYZVC",
+    "url": "https://www.xyz.vc",
+    "portfolio_urls": [
+      "https://www.anduril.com",
+      "https://www.saltbox.com",
+      "https://www.mosaic.tech",
+      "https://www.nova.credit",
+      "https://www.newfront.com",
+      "https://www.stir.app",
+      "https://www.verygoodsecurity.com",
+      "https://www.legion.co",
+      "https://www.apexspace.com",
+      "https://www.cape.com",
+      "https://www.chapter.com",
+      "https://www.promise-pay.com",
+      "https://www.peregrine.ai",
+      "https://www.yurts.ai",
+      "https://www.pryzm.ai",
+      "https://www.cavela.com",
+      "https://www.radiantgraph.com",
+      "https://www.unblocked.ai",
+      "https://www.wraithwatch.com",
+      "https://www.recast.ai"
+    ]
+  }
+]

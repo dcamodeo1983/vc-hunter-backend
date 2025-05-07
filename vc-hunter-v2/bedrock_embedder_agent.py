@@ -16,7 +16,7 @@ def get_bedrock_client():
 
 def embed_text(text: str) -> List[float]:
     client = get_bedrock_client()
-    payload = json.dumps({"inputText": [text]})  # 👈 FIXED: list of strings
+    payload = json.dumps({"inputText": text})  # 👈 single string only
 
     response = client.invoke_model(
         modelId=MODEL_ID,
@@ -27,7 +27,8 @@ def embed_text(text: str) -> List[float]:
 
     body = response['body'].read()
     result = json.loads(body)
-    return result['embedding'][0]  # 👈 Titan returns a list of embeddings
+    return result['embedding']
+
 
 
 def embed_all(jsonl_path: str, output_path: str):

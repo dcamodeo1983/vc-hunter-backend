@@ -15,11 +15,8 @@ def get_bedrock_client():
     return boto3.client("bedrock-runtime", region_name=REGION)
 
 def embed_text(text: str) -> List[float]:
-    """
-    Sends a string to the Titan embedding model and returns the embedding vector.
-    """
     client = get_bedrock_client()
-    payload = json.dumps({"input": text})  # ✅ FIXED KEY
+    payload = json.dumps({"inputText": [text]})  # 👈 FIXED: list of strings
 
     response = client.invoke_model(
         modelId=MODEL_ID,
@@ -30,7 +27,8 @@ def embed_text(text: str) -> List[float]:
 
     body = response['body'].read()
     result = json.loads(body)
-    return result['embedding']
+    return result['embedding'][0]  # 👈 Titan returns a list of embeddings
+
 
 def embed_all(jsonl_path: str, output_path: str):
     """

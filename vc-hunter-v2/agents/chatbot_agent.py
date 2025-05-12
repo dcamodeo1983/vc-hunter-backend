@@ -1,10 +1,9 @@
 
 import os
 import json
-import numpy as np
-from dotenv import load_dotenv
 from openai import OpenAI
-from numpy.linalg import norm
+from dotenv import load_dotenv
+import numpy as np
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -12,75 +11,59 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 EMBED_PATH = "data/embeddings/chatbot_embeddings.json"
 
 def cosine_similarity(a, b):
-    return np.dot(a, b) / (norm(a) * norm(b))
+    a, b = np.array(a), np.array(b)
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
-def get_embedding(text):
+def embed_query(text):
     response = client.embeddings.create(
         model="text-embedding-3-small",
         input=text
     )
     return response.data[0].embedding
 
-def retrieve_relevant_passages(query_embedding, top_k=10, doc_type=None):
+def retrieve_relevant_passages(query_embedding, top_k=5):
     with open(EMBED_PATH, "r", encoding="utf-8") as f:
-        docs = json.load(f)
+        records = json.load(f)
 
-    scored = []
-    for doc in docs:
-        if doc_type and doc["type"] != doc_type:
-            continue
-        similarity = cosine_similarity(query_embedding, doc["embedding"])
-        scored.append((similarity, doc))
+    for record in records:
+        record["similarity"] = cosine_similarity(query_embedding, record["embedding"])
 
-    top_matches = sorted(scored, reverse=True, key=lambda x: x[0])[:top_k]
-    return [match[1] for match in top_matches]
+    sorted_records = sorted(records, key=lambda x: x["similarity"], reverse=True)
+    return sorted_records[:top_k]
 
 def ask_chatgpt(query, context_chunks):
     context = "\n\n---\n\n".join(
         f"{c['type'].upper()} - {c['vc_name']}:\n{c['tagged_text']}" for c in context_chunks
     )
-    prompt = f"""You are an expert on venture capital firm behavior. Use the context below to answer the question.
 
-Context:
-{context}
-
-Question: {query}
-Answer:
-"""
     response = client.chat.completions.create(
         model="gpt-4",
-        messages=[{"role": "user", "content": prompt}]
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant that answers questions about venture capital firms and their investments."},
+            {"role": "user", "content": f"Using the following information:
+
+{context}
+
+Answer this question:
+{query}"}
+        ],
+        temperature=0.4
     )
     return response.choices[0].message.content.strip()
 
 def main():
-    print("🔍 Ask a question about any VC firm (press Enter to quit):")
+    print("\n🔍 Ask a question about any VC firm (press Enter to quit):")
     while True:
         query = input("> ").strip()
         if not query:
-            print("👋 Exiting.")
             break
-
-        doc_type = None
-        if query.lower().startswith("fusion:"):
-            doc_type = "fusion"
-            query = query[len("fusion:"):].strip()
-        elif query.lower().startswith("thesis:"):
-            doc_type = "thesis"
-            query = query[len("thesis:"):].strip()
-
         print("🔄 Embedding your question...")
-        query_embedding = get_embedding(query)
-
-        print(f"📚 Retrieving top relevant {doc_type or 'all'} documents...")
-        top_chunks = retrieve_relevant_passages(query_embedding, top_k=5, doc_type=doc_type)
-
-        print("💬 Generating response with GPT...")
+        query_embedding = embed_query(query)
+        print("📚 Retrieving top relevant documents...")
+        top_chunks = retrieve_relevant_passages(query_embedding, top_k=6)
+        print("💬 Generating response with GPT...\n")
         answer = ask_chatgpt(query, top_chunks)
-
-        print("\n🧠 Answer:")
-        print(answer)
-        print("\n---\n")
+        print(f"\n🧠 Answer:\n{answer}\n")
 
 if __name__ == "__main__":
     main()

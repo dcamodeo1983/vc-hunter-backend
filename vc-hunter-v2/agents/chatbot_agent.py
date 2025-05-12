@@ -32,20 +32,21 @@ def retrieve_relevant_passages(query_embedding, top_k=5):
     return sorted_records[:top_k]
 
 def ask_chatgpt(query, context_chunks):
-    context = "\n\n---\n\n".join(
-        f"{c['type'].upper()} - {c['vc_name']}:\n{c['tagged_text']}" for c in context_chunks
-    )
+    chunks = []
+    for c in context_chunks:
+        try:
+            chunks.append(f"{c['type'].upper()} - {c['vc_name']}:\n{c['tagged_text']}")
+        except KeyError:
+            continue
+    context = "\n\n---\n\n".join(chunks)
+
+    prompt = "Using the following information:\n\n" + context + "\n\nAnswer this question:\n" + query
 
     response = client.chat.completions.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": "You are a helpful assistant that answers questions about venture capital firms and their investments."},
-            {"role": "user", "content": f"Using the following information:
-
-{context}
-
-Answer this question:
-{query}"}
+            {"role": "user", "content": prompt}
         ],
         temperature=0.4
     )

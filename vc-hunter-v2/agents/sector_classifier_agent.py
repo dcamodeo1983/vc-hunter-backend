@@ -43,7 +43,7 @@ def process_all():
         for line in lines:
             item = json.loads(line)
             sectors = classify_sectors(item.get("content", ""))
-            item["sectors"] = sectors
+            item["sector_tags"] = sectors
             tagged.append(item)
 
         with open(os.path.join(OUTPUT_DIR, fname), "w", encoding="utf-8") as out:

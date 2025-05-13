@@ -59,7 +59,13 @@ for fname in os.listdir(STRATEGY_DIR):
         continue
 
     with open(strategy_path, "r") as f:
-        strategy_tags = [json.loads(line)["tag"] for line in f]
+        strategy_tags = []
+        for line in f:
+            record = json.loads(line)
+            if "tag" in record:
+                strategy_tags.append(record["tag"])
+            elif "tags" in record and isinstance(record["tags"], list):
+                strategy_tags.extend(record["tags"])
 
     sector_counts = vc_sector_summary[vc_name]["sector_counts"]
     total_investments = vc_sector_summary[vc_name]["total"]

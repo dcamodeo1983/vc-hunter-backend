@@ -1,44 +1,93 @@
-import os
 import json
-from statistics import mean
+import os
+from collections import defaultdict
+from difflib import SequenceMatcher
 
-INPUT_DIR = "data/classified/portfolio"
-FUSION_DIR = "data/fusions"
+STRATEGY_DIR = "data/strategy_profiles"
+PORTFOLIO_DIR = "data/classified/portfolio"
+VC_INPUT_PATH = "data/vc_input.json"
 OUTPUT_DIR = "data/behavior_scores"
+
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def calculate_overlap(vc_name):
-    try:
-        with open(os.path.join(FUSION_DIR, f"{vc_name}.jsonl"), "r", encoding="utf-8") as f:
-            fusion_data = [json.loads(line) for line in f]
-        with open(os.path.join(INPUT_DIR, f"{vc_name}.jsonl"), "r", encoding="utf-8") as f:
-            portfolio_data = [json.loads(line) for line in f]
-    except FileNotFoundError:
-        print(f"❌ Missing data for {vc_name}")
-        return
+# Load VC input map to know which companies belong to which VC
+with open(VC_INPUT_PATH, "r") as f:
+    vc_input = json.load(f)
 
-    strategy_sectors = set()
-    for record in fusion_data:
-        strategy_sectors.update(record.get("sectors", []))
+# Build mapping from domain -> VC name
+domain_to_vc = {}
+for vc in vc_input:
+    for url in vc.get("portfolio_urls", []):
+        domain = url.replace("https://", "").replace("http://", "").strip("/").lower()
+        domain_to_vc[domain] = vc["name"]
 
-    overlaps = []
-    for company in portfolio_data:
-        company_sectors = set(company.get("sectors", []))
-        if company_sectors:
-            overlap = len(strategy_sectors & company_sectors) / len(company_sectors)
-            overlaps.append(overlap)
+# Load all classified portfolio files
+portfolio_sector_map = defaultdict(list)
+for fname in os.listdir(PORTFOLIO_DIR):
+    if not fname.endswith(".jsonl"):
+        continue
+    domain = fname.replace(".jsonl", "")
+    vc_name = domain_to_vc.get(domain)
+    if not vc_name:
+        continue
+    with open(os.path.join(PORTFOLIO_DIR, fname), "r") as f:
+        for line in f:
+            record = json.loads(line)
+            if "sectors" in record:
+                portfolio_sector_map[vc_name].extend(record["sectors"])
 
-    score = round(mean(overlaps), 2) if overlaps else 0.0
-    result = {"vc_name": vc_name, "consistency_score": score}
-    with open(os.path.join(OUTPUT_DIR, f"{vc_name}.json"), "w", encoding="utf-8") as f:
-        json.dump(result, f, indent=2)
+# Normalize and count sector frequency
+vc_sector_summary = {
+    vc: {
+        "sector_counts": {s: portfolio.count(s) for s in set(portfolio)},
+        "total": len(portfolio)
+    }
+    for vc, portfolio in portfolio_sector_map.items()
+}
 
-    print(f"✅ Scored {vc_name}: {score}")
+# Run comparison against strategy tags
+def match_score(strategy_tag, sector):
+    return SequenceMatcher(None, strategy_tag.lower(), sector.lower()).ratio()
 
-def main():
-    vc_names = [fname.replace(".jsonl", "") for fname in os.listdir(FUSION_DIR) if fname.endswith(".jsonl")]
-    for vc in vc_names:
-        calculate_overlap(vc)
+for fname in os.listdir(STRATEGY_DIR):
+    if not fname.endswith(".jsonl"):
+        continue
+    vc_name = fname.replace(".jsonl", "")
+    strategy_path = os.path.join(STRATEGY_DIR, fname)
+    if vc_name not in vc_sector_summary:
+        print(f"❌ Missing classified portfolio data for {vc_name}")
+        continue
 
-if __name__ == "__main__":
-    main()
+    with open(strategy_path, "r") as f:
+        strategy_tags = [json.loads(line)["tag"] for line in f]
+
+    sector_counts = vc_sector_summary[vc_name]["sector_counts"]
+    total_investments = vc_sector_summary[vc_name]["total"]
+
+    match_results = []
+    for tag in strategy_tags:
+        best_match = max(sector_counts.items(), key=lambda kv: match_score(tag, kv[0]))
+        match_results.append({
+            "tag": tag,
+            "matched_sector": best_match[0],
+            "sector_count": best_match[1],
+            "score": match_score(tag, best_match[0])
+        })
+
+    avg_score = sum(m["score"] for m in match_results) / len(match_results)
+
+    output = {
+        "vc_name": vc_name,
+        "strategy_tags": strategy_tags,
+        "total_investments": total_investments,
+        "sector_counts": sector_counts,
+        "match_results": match_results,
+        "average_alignment_score": round(avg_score, 3)
+    }
+
+    with open(os.path.join(OUTPUT_DIR, f"{vc_name}.json"), "w") as f:
+        json.dump(output, f, indent=2)
+
+    print(f"✅ Scored {vc_name}: {round(avg_score, 3)}")
+
+print("🏁 Behavior consistency scoring complete.")

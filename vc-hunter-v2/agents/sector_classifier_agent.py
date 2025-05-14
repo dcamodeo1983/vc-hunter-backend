@@ -1,12 +1,9 @@
 import os
 import json
-from openai import OpenAI
 from dotenv import load_dotenv
+from utils.llm_client import llm_chat
 
 load_dotenv()
-openai_api_key = os.getenv("OPENAI_API_KEY")
-
-client = OpenAI(api_key=openai_api_key)
 
 INPUT_DIR = "data/raw/portfolio"
 OUTPUT_DIR = "data/classified/portfolio"
@@ -22,12 +19,8 @@ def classify_sectors(text: str):
 
     Respond with a JSON list of 1-3 sector names (strings only).
     """
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}]
-    )
     try:
-        return json.loads(response.choices[0].message.content)
+        return json.loads(llm_chat(prompt))
     except Exception as e:
         print(f"❌ Failed to parse sectors: {e}")
         return []
@@ -43,7 +36,7 @@ def process_all():
         for line in lines:
             item = json.loads(line)
             sectors = classify_sectors(item.get("content", ""))
-            item["sector_tags"] = sectors
+            item["sectors"] = sectors
             tagged.append(item)
 
         with open(os.path.join(OUTPUT_DIR, fname), "w", encoding="utf-8") as out:

@@ -1,5 +1,8 @@
 import os
 import json
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
+
 from utils.llm_client import llm_chat
 
 VC_INPUT = "data/vc_input.json"

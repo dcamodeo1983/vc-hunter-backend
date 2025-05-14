@@ -1,36 +1,22 @@
-import os
-import json
-from openai import OpenAI
-from dotenv import load_dotenv
-
-load_dotenv()
-openai_api_key = os.getenv("OPENAI_API_KEY")
-
-client = OpenAI(api_key=openai_api_key)
+import os, json
+from utils.llm_client import llm_chat
 
 INPUT_DIR = "data/fusions"
 OUTPUT_DIR = "data/strategy_profiles"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def extract_strategy_tags(text: str):
+def extract_strategy_tags(text):
     prompt = f"""
-    From the following venture firm strategy summary, extract 3-5 tags that represent their investment philosophy, strategic posture, or startup preferences.
-    
-    Examples include: Thesis-led, Deep Tech, GovTech, Repeat Founders, Contrarian, Platform Builders, AI-Centric, Long-Horizon, Risk-Tolerant, Defense-Oriented.
+    Identify 3 to 5 high-level strategic themes in the following VC description:
 
-    Text:
-    {text}
+    "{text}"
 
-    Respond with a JSON list of short string tags.
+    Respond as a JSON list of strings.
     """
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}]
-    )
     try:
-        return json.loads(response.choices[0].message.content)
+        return json.loads(llm_chat(prompt))
     except Exception as e:
-        print(f"❌ Strategy tag parse error: {e}")
+        print(f"❌ Error extracting strategy tags: {e}")
         return []
 
 def process_all():
@@ -38,15 +24,18 @@ def process_all():
         if not fname.endswith(".jsonl"):
             continue
         with open(os.path.join(INPUT_DIR, fname), "r", encoding="utf-8") as f:
-            items = [json.loads(line) for line in f]
+            lines = f.readlines()
 
-        for item in items:
+        enriched = []
+        for line in lines:
+            item = json.loads(line)
             tags = extract_strategy_tags(item.get("content", ""))
             item["strategy_tags"] = tags
+            enriched.append(item)
 
-        with open(os.path.join(OUTPUT_DIR, fname), "w", encoding="utf-8") as f:
-            for item in items:
-                f.write(json.dumps(item) + "\n")
+        with open(os.path.join(OUTPUT_DIR, fname), "w", encoding="utf-8") as out:
+            for item in enriched:
+                out.write(json.dumps(item) + "\n")
 
     print("✅ Strategy profiling complete.")
 

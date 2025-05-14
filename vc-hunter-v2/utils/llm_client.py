@@ -1,34 +1,39 @@
-import os, json
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
-provider_config = json.load(open("config/model_provider.json"))
-provider = provider_config["provider"]
-model = provider_config["model"]
 
-if provider == "openai":
-    from openai import OpenAI
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-elif provider == "bedrock":
+USE_BEDROCK = os.getenv("USE_BEDROCK", "false").lower() == "true"
+BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
+
+if USE_BEDROCK:
+    from langchain_aws import ChatBedrock
+    from langchain_core.messages import HumanMessage
     import boto3
-    from langchain_community.chat_models import BedrockChat
-    session = boto3.Session(region_name=os.getenv("AWS_REGION"))
-    bedrock = session.client(service_name="bedrock-runtime")
-    client = BedrockChat(
-        client=bedrock,
-        DEFAULT_MODEL_ID = "anthropic.claude-3-haiku-20240307-v1:0",
-        model_kwargs={"temperature": 0.2}
-    )
-else:
-    raise ValueError("❌ Unknown provider in config/model_provider.json")
 
-def llm_chat(prompt):
-    if provider == "openai":
+    bedrock_runtime = boto3.client("bedrock-runtime")
+
+    client = ChatBedrock(
+        model_id=BEDROCK_MODEL_ID,
+        client=bedrock_runtime,
+        model_kwargs={"temperature": 0.3},
+    )
+
+    def llm_chat(prompt: str) -> str:
+        response = client.invoke([HumanMessage(content=prompt)])
+        return response.content
+
+else:
+    from openai import OpenAI
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    def llm_chat(prompt: str) -> str:
         response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}]
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3
         )
         return response.choices[0].message.content.strip()
-    elif provider == "bedrock":
-        return client.invoke(prompt).content.strip()
-

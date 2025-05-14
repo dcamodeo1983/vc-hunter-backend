@@ -1,23 +1,31 @@
-import os, json
+import os
+import json
+from dotenv import load_dotenv
 import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 from utils.llm_client import llm_chat
 
-INPUT_DIR = "data/fusions"
-OUTPUT_DIR = "data/strategy_profiles"
+load_dotenv()
+
+INPUT_DIR = "data/raw/strategy"
+OUTPUT_DIR = "data/classified/strategy"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def extract_strategy_tags(text):
+def extract_strategy_tags(text: str):
     prompt = f"""
-    Identify 3 to 5 high-level strategic themes in the following VC description:
+    Assume the role of HArvard Business School Professor.  You have deep knowledge of strategic frameworks including but not limited to ; HAmilton Helmers 7 Powers, Porters FiveForces, Clayton Christenson's Disruptive Innovation, PEter Thiel's Zero to One, BCG Matrix, and McKinsey 9 Box Matrix, and Ansoff Matrix.  YOur goal is to review VC funds and by looking at their website and derive their stated and latent strategy. Analyze the following venture firm's public material and extract 3-7 investment strategy tags.
 
-    "{text}"
+    Strategy tags should be high-level themes such as:
+    Dual-Use Tech, Bio + Health, Network Effects, GovTech, AI/ML, DeepTech, Climate + ESG, Vertical SaaS, Founders First, etc.
 
-    Respond as a JSON list of strings.
+    Text:
+    {text}
+
+    Respond with a JSON list of strings.
     """
     try:
-        return json.loads(llm_chat(prompt))
+        return json.loads(llm_chat([{"role": "user", "content": prompt}]))
     except Exception as e:
         print(f"❌ Error extracting strategy tags: {e}")
         return []
@@ -29,15 +37,15 @@ def process_all():
         with open(os.path.join(INPUT_DIR, fname), "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-        enriched = []
+        tagged = []
         for line in lines:
             item = json.loads(line)
             tags = extract_strategy_tags(item.get("content", ""))
             item["strategy_tags"] = tags
-            enriched.append(item)
+            tagged.append(item)
 
         with open(os.path.join(OUTPUT_DIR, fname), "w", encoding="utf-8") as out:
-            for item in enriched:
+            for item in tagged:
                 out.write(json.dumps(item) + "\n")
 
     print("✅ Strategy profiling complete.")

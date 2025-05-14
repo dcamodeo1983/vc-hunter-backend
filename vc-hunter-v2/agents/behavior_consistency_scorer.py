@@ -1,100 +1,61 @@
-
 import os
 import json
-import difflib
-from collections import defaultdict
+from utils.llm_client import llm_chat
 
-VC_INPUT_PATH = "data/vc_input.json"
-CLASSIFIED_PORTFOLIO_DIR = "data/classified/portfolio"
-STRATEGY_PROFILE_DIR = "data/strategy_profiles"
-OUTPUT_DIR = "data/scores"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+VC_INPUT = "data/vc_input.json"
+CLASSIFIED_DIR = "data/classified/portfolio"
+STRATEGY_DIR = "data/strategy_profiles"
 
-def get_strategy_tags(vc_name):
-    path = os.path.join(STRATEGY_PROFILE_DIR, f"{vc_name}.jsonl")
-    if not os.path.exists(path):
-        print(f"❌ No strategy profile found for {vc_name}")
-        return []
-    with open(path, "r", encoding="utf-8") as f:
-        try:
-            return json.loads(f.read()).get("strategy_tags", [])
-        except Exception as e:
-            print(f"❌ Error loading strategy tags for {vc_name}: {e}")
-            return []
+def score_alignment(strategy_tags, sector_list):
+    prompt = f"""
+    Compare the strategy tags below with the list of sectors from a portfolio company.
+    Strategy Tags: {strategy_tags}
+    Portfolio Sectors: {sector_list}
 
-def resolve_domain_variants(domain):
-    base = domain.replace("www.", "")
-    return [base, f"www.{base}"]
-
-def match_strategy_to_portfolio(vc_name, strategy_tags, portfolio_domains):
-    match_results = []
-    missing_domains = []
-
-    for domain in portfolio_domains:
-        matched = False
-        variants = resolve_domain_variants(domain)
-        for variant in variants:
-            fpath = os.path.join(CLASSIFIED_PORTFOLIO_DIR, f"{variant}.jsonl")
-            if os.path.exists(fpath):
-                with open(fpath, "r", encoding="utf-8") as f:
-                    for line in f:
-                        try:
-                            data = json.loads(line)
-                            sectors = data.get("sectors", [])
-                            score = len(set(sectors) & set(strategy_tags)) / max(len(strategy_tags), 1)
-                            match_results.append({
-                                "portfolio": variant,
-                                "sectors": sectors,
-                                "score": round(score, 2),
-                                "matched_tags": list(set(sectors) & set(strategy_tags))
-                            })
-                            matched = True
-                            break
-                        except Exception as e:
-                            print(f"❌ Failed parsing {variant}: {e}")
-                if matched:
-                    break
-        if not matched:
-            missing_domains.append(domain)
-
-    return match_results, missing_domains
+    Respond with a single float between 0 and 1 reflecting alignment (1 = perfect alignment).
+    """
+    try:
+        return float(llm_chat(prompt))
+    except:
+        return 0.0
 
 def main():
-    with open(VC_INPUT_PATH, "r", encoding="utf-8") as f:
-        vc_data = json.load(f)
+    with open(VC_INPUT, "r", encoding="utf-8") as f:
+        vcs = json.load(f)
 
-    if isinstance(vc_data, list):
-        vc_entries = vc_data
-    else:
-        vc_entries = list(vc_data.values())
-
-    for vc in vc_entries:
-        vc_name = vc["name"]
-        strategy_tags = get_strategy_tags(vc_name)
-        if not strategy_tags:
-            print(f"⚠️ Skipping {vc_name}: no strategy tags.")
+    for vc in vcs:
+        name = vc["name"]
+        strategy_path = os.path.join(STRATEGY_DIR, f"{name}.jsonl")
+        if not os.path.exists(strategy_path):
+            print(f"❌ No strategy profile found for {name}")
             continue
 
-        match_results, missing = match_strategy_to_portfolio(vc_name, strategy_tags, vc["portfolio_urls"])
-        if not match_results:
-            print(f"⚠️ No classified portfolio matches found for {vc_name}")
-            continue
+        with open(strategy_path, "r", encoding="utf-8") as f:
+            strategy_data = json.loads(f.readline())
+            strategy_tags = strategy_data.get("strategy_tags", [])
+            if not strategy_tags:
+                print(f"⚠️ Skipping {name}: no strategy tags.")
+                continue
 
-        avg_score = round(sum(m["score"] for m in match_results) / len(match_results), 2)
-        output = {
-            "vc_name": vc_name,
-            "strategy_tags": strategy_tags,
-            "matches": match_results,
-            "missing_portfolios": missing,
-            "behavior_consistency_score": avg_score
-        }
+        match_results = []
+        for p_url in vc.get("portfolio_urls", []):
+            domain = p_url.split("//")[-1].replace("/", "")
+            portfolio_path = os.path.join(CLASSIFIED_DIR, f"{domain}.jsonl")
+            if not os.path.exists(portfolio_path):
+                print(f"⚠️ Missing classified portfolio data for {domain}")
+                continue
 
-        outpath = os.path.join(OUTPUT_DIR, f"{vc_name}.json")
-        with open(outpath, "w", encoding="utf-8") as f:
-            json.dump(output, f, indent=2)
+            with open(portfolio_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    item = json.loads(line)
+                    score = score_alignment(strategy_tags, item.get("sectors", []))
+                    match_results.append({"portfolio": domain, "score": score})
 
-        print(f"✅ Scored {vc_name}: {avg_score}")
-
+        if match_results:
+            avg_score = sum(m["score"] for m in match_results) / len(match_results)
+            print(f"✅ {name} behavior consistency score: {avg_score:.2f}")
+        else:
+            print(f"⚠️ No classified portfolio matches found for {name}")
     print("🏁 Behavior consistency scoring complete.")
 
 if __name__ == "__main__":

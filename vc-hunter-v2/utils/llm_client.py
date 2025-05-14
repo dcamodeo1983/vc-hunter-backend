@@ -16,7 +16,7 @@ elif provider == "bedrock":
     bedrock = session.client(service_name="bedrock-runtime")
     client = BedrockChat(
         client=bedrock,
-        model_id=model,
+        DEFAULT_MODEL_ID = "anthropic.claude-3-haiku-20240307-v1:0",
         model_kwargs={"temperature": 0.2}
     )
 else:

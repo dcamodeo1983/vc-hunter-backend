@@ -2,8 +2,8 @@ import os
 import json
 from dotenv import load_dotenv
 import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 from utils.llm_client import llm_chat
 
 load_dotenv()
@@ -14,16 +14,16 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def classify_sectors(text: str):
     prompt = f"""
-    Classify the following startup description into 1 to 3 high-level sectors such as:
+    Assume the role of an professor at a world class business university.  You preparing soem course material which will require students to classify start-ups into sectors.  YOu want to make sure you have already worked through the assignment before handing it to your students.  Classify the following startup description into 1 to 5 high-level sectors such as:
     Defense, Healthcare, AI, SaaS, Robotics, Fintech, Logistics, GovTech, Climate, or Consumer Tech.
 
     Text:
     {text}
 
-    Respond with a JSON list of 1-3 sector names (strings only).
+    Respond with a JSON list of 1-5 sector names (strings only).
     """
     try:
-        return json.loads(llm_chat(prompt))
+        return json.loads(llm_chat([{"role": "user", "content": prompt}]))
     except Exception as e:
         print(f"❌ Failed to parse sectors: {e}")
         return []

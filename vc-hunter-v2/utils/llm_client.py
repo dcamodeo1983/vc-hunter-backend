@@ -1,21 +1,24 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
 
-# === OPENAI SETUP ===
+# === OPENAI ===
 if LLM_PROVIDER == "openai":
     from openai import OpenAI
 
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
-
     client = OpenAI(api_key=OPENAI_API_KEY)
 
     def llm_chat(messages):
+        # messages must be a list of dicts: [{"role": "user", "content": "..."}, ...]
+        if not isinstance(messages, list) or not all(isinstance(m, dict) for m in messages):
+            raise ValueError("`messages` must be a list of {'role', 'content'} dicts for OpenAI")
+        
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=messages,
@@ -23,7 +26,7 @@ if LLM_PROVIDER == "openai":
         )
         return response.choices[0].message.content.strip()
 
-# === BEDROCK SETUP ===
+# === BEDROCK ===
 elif LLM_PROVIDER == "bedrock":
     import boto3
     from langchain_aws import ChatBedrock
@@ -39,9 +42,13 @@ elif LLM_PROVIDER == "bedrock":
     )
 
     def llm_chat(messages):
-        prompt = "\n\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in messages])
+        # Convert list of dicts to Claude-style prompt string
+        if isinstance(messages, list):
+            prompt = "\n\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in messages])
+        else:
+            raise ValueError("`messages` must be a list of dicts for Bedrock Claude input")
+        
         return client.invoke(prompt).content.strip()
 
-# === UNSUPPORTED PROVIDER ===
 else:
     raise ValueError(f"Unsupported LLM provider: {LLM_PROVIDER}")

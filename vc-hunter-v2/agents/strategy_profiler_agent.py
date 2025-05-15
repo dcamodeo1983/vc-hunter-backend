@@ -31,11 +31,12 @@ def extract_strategy_tags(text: str):
         return []
 
 def process_all():
+    if not os.path.exists(INPUT_DIR):
+        print(f"⚠️ Input directory '{INPUT_DIR}' not found. Skipping strategy profiling.")
+        return
+
     for fname in os.listdir(INPUT_DIR):
-        if not fname.endswith(".jsonl"):
-            continue
-        with open(os.path.join(INPUT_DIR, fname), "r", encoding="utf-8") as f:
-            lines = f.readlines()
+
 
         tagged = []
         for line in lines:

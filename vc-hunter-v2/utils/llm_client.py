@@ -1,54 +1,51 @@
-import os
-from dotenv import load_dotenv
+# utils/llm_client.py
 
-# Load environment variables
+import os
+import openai
+from dotenv import load_dotenv
+import tiktoken
+
 load_dotenv()
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# === OPENAI ===
-if LLM_PROVIDER == "openai":
-    from openai import OpenAI
+# Toggle model here
+default_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
 
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
-    client = OpenAI(api_key=OPENAI_API_KEY)
+# Tokenizer for token tracking
+def count_tokens(text, model="gpt-3.5-turbo"):
+    encoding = tiktoken.encoding_for_model(model)
+    return len(encoding.encode(text))
 
-    def llm_chat(messages):
-        # messages must be a list of dicts: [{"role": "user", "content": "..."}, ...]
-        if not isinstance(messages, list) or not all(isinstance(m, dict) for m in messages):
-            raise ValueError("`messages` must be a list of {'role', 'content'} dicts for OpenAI")
-        
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=messages,
-            temperature=0.3,
+def llm_chat(prompt: str, model: str = default_model):
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": prompt}
+    ]
+    try:
+        response = openai.ChatCompletion.create(
+            model=model,
+            messages=messages
         )
-        return response.choices[0].message.content.strip()
+        reply = response.choices[0].message.content
+        prompt_tokens = response.usage.prompt_tokens
+        completion_tokens = response.usage.completion_tokens
+        total_tokens = response.usage.total_tokens
+        print(f"📊 [llm_chat] Tokens — Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {total_tokens}")
+        return reply
+    except Exception as e:
+        print(f"❌ LLM chat error: {e}")
+        raise
 
-# === BEDROCK ===
-elif LLM_PROVIDER == "bedrock":
-    import boto3
-    from langchain_aws import ChatBedrock
-
-    BEDROCK_REGION = os.getenv("BEDROCK_REGION", "us-east-1")
-    BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0")
-
-    boto3_client = boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
-    client = ChatBedrock(
-        model_id=BEDROCK_MODEL_ID,
-        client=boto3_client,
-        model_kwargs={"temperature": 0.3},
-    )
-
-    def llm_chat(messages):
-        # Convert list of dicts to Claude-style prompt string
-        if isinstance(messages, list):
-            prompt = "\n\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in messages])
-        else:
-            raise ValueError("`messages` must be a list of dicts for Bedrock Claude input")
-        
-        return client.invoke(prompt).content.strip()
-
-else:
-    raise ValueError(f"Unsupported LLM provider: {LLM_PROVIDER}")
+def llm_embed(text: str, model: str = "text-embedding-ada-002"):
+    try:
+        response = openai.Embedding.create(
+            model=model,
+            input=text
+        )
+        tokens_used = count_tokens(text, model=model)
+        print(f"📊 [llm_embed] Tokens used: {tokens_used}")
+        return response.data[0].embedding
+    except Exception as e:
+        print(f"❌ LLM embedding error: {e}")
+        raise

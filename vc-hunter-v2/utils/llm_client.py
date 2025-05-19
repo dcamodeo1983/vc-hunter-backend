@@ -1,56 +1,32 @@
-# utils/llm_client.py
-
 import os
-import openai
+from openai import OpenAI
 from dotenv import load_dotenv
-import tiktoken
 
 load_dotenv()
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Initialize the OpenAI client using environment variable
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Toggle model here
-default_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
-
-# Tokenizer for token tracking
-def count_tokens(text, model="gpt-3.5-turbo"):
-    encoding = tiktoken.encoding_for_model(model)
-    return len(encoding.encode(text))
-
-def llm_chat(prompt: str, model: str = default_model):
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": prompt}
-    ]
+def llm_chat(messages, model="gpt-3.5-turbo", temperature=0.3):
+    """
+    Sends a list of messages to the OpenAI chat API and returns the response content.
+    Format of `messages`: [{"role": "user", "content": "your prompt"}]
+    """
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model=model,
-            messages=messages
+            messages=messages,
+            temperature=temperature
         )
-        reply = response.choices[0].message.content
-        prompt_tokens = response.usage.prompt_tokens
-        completion_tokens = response.usage.completion_tokens
-        total_tokens = response.usage.total_tokens
-        print(f"📊 [llm_chat] Tokens — Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {total_tokens}")
-        return reply
+        return response.choices[0].message.content.strip()
     except Exception as e:
         print(f"❌ LLM chat error: {e}")
-        raise
-
-def llm_embed(text: str, model: str = "text-embedding-ada-002"):
-    try:
-        response = openai.Embedding.create(
-            model=model,
-            input=text
-        )
-        tokens_used = count_tokens(text, model=model)
-        print(f"📊 [llm_embed] Tokens used: {tokens_used}")
-        return response.data[0].embedding
-    except Exception as e:
-        print(f"❌ LLM embedding error: {e}")
-        raise
+        return None
 
 def get_embedding(text, model="text-embedding-ada-002"):
+    """
+    Returns the embedding vector for a given input text.
+    """
     try:
         response = client.embeddings.create(
             input=[text],
@@ -61,3 +37,14 @@ def get_embedding(text, model="text-embedding-ada-002"):
         print(f"❌ Embedding error: {e}")
         return None
 
+def count_tokens(text, model="gpt-3.5-turbo"):
+    """
+    Estimates the number of tokens in the text based on simple heuristics.
+    For more accuracy, integrate with tiktoken library.
+    """
+    try:
+        # Basic heuristic: 1 token ≈ 4 characters in English
+        return int(len(text) / 4)
+    except Exception as e:
+        print(f"❌ Token counting error: {e}")
+        return 0

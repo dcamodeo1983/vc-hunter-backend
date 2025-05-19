@@ -15,9 +15,8 @@ OUTPUT_DIR = "data/classified/portfolio"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def classify_sectors(text: str):
-    global token_usage_total
     prompt = f"""
-    Assume the role of a professor at a world-class business university. You are preparing course material which will require students to classify start-ups into sectors. You want to make sure you have already worked through the assignment before handing it to your students. Classify the following startup description into 1 to 5 high-level sectors such as:
+    Assume the role of a professor at a world-class business university. You are preparing course material that requires students to classify startups into sectors. Classify the following startup description into 1 to 5 high-level sectors such as:
     Defense, Healthcare, AI, SaaS, Robotics, Fintech, Logistics, GovTech, Climate, or Consumer Tech.
 
     Text:
@@ -26,12 +25,14 @@ def classify_sectors(text: str):
     Respond with a JSON list of 1-5 sector names (strings only).
     """
     try:
-        messages = [{"role": "user", "content": prompt}]
-        token_usage_total += count_tokens(messages)
-        return json.loads(llm_chat(messages))
+        result = llm_chat([{"role": "user", "content": prompt}])
+        if isinstance(result, str):
+            return json.loads(result)
+        return result
     except Exception as e:
         print(f"❌ Failed to parse sectors: {e}")
         return []
+
 
 def process_all():
     global token_usage_total

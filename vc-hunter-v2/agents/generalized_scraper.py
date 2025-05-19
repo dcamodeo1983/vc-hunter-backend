@@ -3,7 +3,7 @@ import os
 import json
 import requests
 from bs4 import BeautifulSoup
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 def scrape_site(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}

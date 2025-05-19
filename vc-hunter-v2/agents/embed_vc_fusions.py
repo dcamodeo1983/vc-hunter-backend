@@ -2,7 +2,7 @@
 import os
 import json
 import boto3
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 REGION = "us-east-1"
 MODEL_ID = "amazon.titan-embed-text-v2:0"
 INPUT_DIR = "data/fusion_docs"

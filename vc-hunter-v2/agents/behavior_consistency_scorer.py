@@ -45,7 +45,8 @@ Respond in the following JSON format:
 
 def process_all():
     from utils.file_utils import load_jsonl
-    summaries = load_vc_summaries()
+    summaries = load_jsonl("data/processed/vc_profiles.jsonl")
+    summaries = {item["name"]: item["summary"] for item in summaries}
     for vc_name, summary in summaries.items():
         strategy = load_strategy_profile(vc_name)
         if not strategy:

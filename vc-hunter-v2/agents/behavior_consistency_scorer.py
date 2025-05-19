@@ -1,65 +1,64 @@
+
 import os
 import json
+from dotenv import load_dotenv
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 
-from utils.llm_client import llm_chat
+from utils.llm_client import llm_chat, count_tokens
 
-VC_INPUT = "data/vc_input.json"
-CLASSIFIED_DIR = "data/classified/portfolio"
-STRATEGY_DIR = "data/strategy_profiles"
+load_dotenv()
 
-def score_alignment(strategy_tags, sector_list):
+STRATEGY_PATH = "data/classified/strategy"
+OUTPUT_PATH = "data/analysis/behavior_consistency"
+os.makedirs(OUTPUT_PATH, exist_ok=True)
+
+def load_strategy_profile(vc_name):
+    path = os.path.join(STRATEGY_PATH, f"{vc_name}.json")
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return None
+
+def score_behavior_consistency(vc_summary, strategy_profile):
     prompt = f"""
-    Compare the strategy tags below with the list of sectors from a portfolio company.
-    Strategy Tags: {strategy_tags}
-    Portfolio Sectors: {sector_list}
+You are an analyst evaluating how consistent a venture capital firm's stated investment strategy is with its actual behavior. Given the firm's public summary and a synthesized strategy profile (tags and inferred priorities), rate the level of alignment on a scale from 1 to 5 and explain the rationale.
 
-    Respond with a single float between 0 and 1 reflecting alignment (1 = perfect alignment).
-    """
+VC Summary:
+{vc_summary}
+
+Strategy Tags:
+{strategy_profile}
+
+Respond in the following JSON format:
+{{
+  "score": int,   // 1 (low consistency) to 5 (high consistency)
+  "justification": str
+}}
+"""
     try:
-        return float(llm_chat(prompt))
-    except:
-        return 0.0
+        response = llm_chat([{"role": "user", "content": prompt}])
+        return json.loads(response)
+    except Exception as e:
+        print(f"❌ Error scoring consistency: {e}")
+        return {"score": 0, "justification": "LLM error"}
 
-def main():
-    with open(VC_INPUT, "r", encoding="utf-8") as f:
-        vcs = json.load(f)
-
-    for vc in vcs:
-        name = vc["name"]
-        strategy_path = os.path.join(STRATEGY_DIR, f"{name}.jsonl")
-        if not os.path.exists(strategy_path):
-            print(f"❌ No strategy profile found for {name}")
+def process_all():
+    from utils.file_manager import load_vc_summaries
+    summaries = load_vc_summaries()
+    for vc_name, summary in summaries.items():
+        strategy = load_strategy_profile(vc_name)
+        if not strategy:
+            print(f"❌ No strategy profile found for {vc_name}")
             continue
-
-        with open(strategy_path, "r", encoding="utf-8") as f:
-            strategy_data = json.loads(f.readline())
-            strategy_tags = strategy_data.get("strategy_tags", [])
-            if not strategy_tags:
-                print(f"⚠️ Skipping {name}: no strategy tags.")
-                continue
-
-        match_results = []
-        for p_url in vc.get("portfolio_urls", []):
-            domain = p_url.split("//")[-1].replace("/", "")
-            portfolio_path = os.path.join(CLASSIFIED_DIR, f"{domain}.jsonl")
-            if not os.path.exists(portfolio_path):
-                print(f"⚠️ Missing classified portfolio data for {domain}")
-                continue
-
-            with open(portfolio_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    item = json.loads(line)
-                    score = score_alignment(strategy_tags, item.get("sectors", []))
-                    match_results.append({"portfolio": domain, "score": score})
-
-        if match_results:
-            avg_score = sum(m["score"] for m in match_results) / len(match_results)
-            print(f"✅ {name} behavior consistency score: {avg_score:.2f}")
-        else:
-            print(f"⚠️ No classified portfolio matches found for {name}")
+        if not strategy.get("tags"):
+            print(f"⚠️ Skipping {vc_name}: no strategy tags.")
+            continue
+        result = score_behavior_consistency(summary, strategy)
+        out_path = os.path.join(OUTPUT_PATH, f"{vc_name}.json")
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2)
     print("🏁 Behavior consistency scoring complete.")
 
 if __name__ == "__main__":
-    main()
+    process_all()

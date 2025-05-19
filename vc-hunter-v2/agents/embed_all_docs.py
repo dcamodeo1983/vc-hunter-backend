@@ -1,66 +1,48 @@
 
 import os
 import json
-from openai import OpenAI
 from dotenv import load_dotenv
+from utils.llm_client import get_embedding, count_tokens
 import sys
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
 
-
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-OUTPUT_PATH = "data/embeddings/chatbot_embeddings.json"
-DIRS = {
-    "fusion": "data/fusions",
-    "thesis": "data/raw/vcs",
-    "portfolio": "data/raw/portfolio"
+INPUT_DIRS = {
+    "portfolio": "data/classified/portfolio",
+    "strategy": "data/classified/strategy"
 }
+OUTPUT_FILE = "data/embedded/embedded.jsonl"
+os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
 
-def get_embedding(text):
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=text
-    )
-    return response.data[0].embedding
-
-def tag_text(vc_name, content, doc_type):
-    return f"TYPE: {doc_type.upper()}\nVC: {vc_name}\nCONTENT:\n{content.strip()}"
-
-def embed_directory(directory, doc_type):
-    records = []
-    if not os.path.exists(directory):
-        return records
-    for fname in os.listdir(directory):
+def embed_directory(input_dir, doc_type):
+    embedded = []
+    for fname in os.listdir(input_dir):
         if not fname.endswith(".jsonl"):
             continue
-        vc_name = fname.replace(".jsonl", "")
-        path = os.path.join(directory, fname)
-        with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        for line in lines:
-            data = json.loads(line)
-            content = data.get("content", "")
-            if not content.strip():
-                continue
-            tagged = tag_text(vc_name, content, doc_type)
-            embedding = get_embedding(tagged)
-            records.append({
-                "vc_name": vc_name,
-                "type": doc_type,
-                "tagged_text": tagged,
-                "embedding": embedding
-            })
-    return records
+        with open(os.path.join(input_dir, fname), "r", encoding="utf-8") as f:
+            for line in f:
+                record = json.loads(line)
+                text = record.get("content", "") + " " + ", ".join(record.get("sectors", []))
+                embedding = get_embedding(text)
+                tokens = count_tokens(text)
+                record.update({
+                    "embedding": embedding,
+                    "doc_type": doc_type,
+                    "token_count": tokens
+                })
+                embedded.append(record)
+    return embedded
 
 def embed_all():
     all_records = []
-    for doc_type, directory in DIRS.items():
+    for doc_type, directory in INPUT_DIRS.items():
         all_records.extend(embed_directory(directory, doc_type))
-    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
-        json.dump(all_records, f, indent=2)
-    print(f"✅ Embedded {len(all_records)} tagged documents to {OUTPUT_PATH}")
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
+        for rec in all_records:
+            out.write(json.dumps(rec) + "\n")
+    print("✅ All documents embedded.")
 
 if __name__ == "__main__":
     embed_all()

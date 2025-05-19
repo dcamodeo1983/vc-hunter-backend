@@ -4,7 +4,9 @@ from dotenv import load_dotenv
 import sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
-from utils.llm_client import llm_chat
+from utils.llm_client import llm_chat, count_tokens
+
+token_usage_total = 0
 
 load_dotenv()
 
@@ -13,30 +15,30 @@ OUTPUT_DIR = "data/classified/strategy"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def extract_strategy_tags(text: str):
+    global token_usage_total
     prompt = f"""
-    Assume the role of HArvard Business School Professor.  You have deep knowledge of strategic frameworks including but not limited to ; HAmilton Helmers 7 Powers, Porters FiveForces, Clayton Christenson's Disruptive Innovation, PEter Thiel's Zero to One, BCG Matrix, and McKinsey 9 Box Matrix, and Ansoff Matrix.  YOur goal is to review VC funds and by looking at their website and derive their stated and latent strategy. Analyze the following venture firm's public material and extract 3-7 investment strategy tags.
-
-    Strategy tags should be high-level themes such as:
-    Dual-Use Tech, Bio + Health, Network Effects, GovTech, AI/ML, DeepTech, Climate + ESG, Vertical SaaS, Founders First, etc.
+    As a venture capital analyst preparing a strategic review, extract 3-7 key strategic themes or focus areas mentioned in the following description of a VC firm's investment thesis. Use concise phrases such as: “AI-first SaaS”, “Bioinformatics”, “Frontier Tech”, “Cloud-native apps”, “Verticalized Marketplaces”, etc.
 
     Text:
     {text}
 
-    Respond with a JSON list of strings.
+    Respond with a JSON list of concise tags (strings only).
     """
     try:
-        return json.loads(llm_chat([{"role": "user", "content": prompt}]))
+        messages = [{"role": "user", "content": prompt}]
+        response = llm_chat(messages)
+        token_usage_total += count_tokens(messages)
+        return json.loads(response)
     except Exception as e:
         print(f"❌ Error extracting strategy tags: {e}")
         return []
 
 def process_all():
-    if not os.path.exists(INPUT_DIR):
-        print(f"⚠️ Input directory '{INPUT_DIR}' not found. Skipping strategy profiling.")
-        return
-
     for fname in os.listdir(INPUT_DIR):
-
+        if not fname.endswith(".jsonl"):
+            continue
+        with open(os.path.join(INPUT_DIR, fname), "r", encoding="utf-8") as f:
+            lines = f.readlines()
 
         tagged = []
         for line in lines:
@@ -49,7 +51,7 @@ def process_all():
             for item in tagged:
                 out.write(json.dumps(item) + "\n")
 
-    print("✅ Strategy profiling complete.")
+    print(f"✅ Strategy profiling complete. Tokens used: {token_usage_total}")
 
 if __name__ == "__main__":
     process_all()

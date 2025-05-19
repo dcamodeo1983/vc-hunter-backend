@@ -4,6 +4,7 @@ import numpy as np
 from dotenv import load_dotenv
 from utils.llm_client import llm_chat
 from utils.embed_utils import get_embedding, cosine_similarity
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 load_dotenv()
 EMBED_PATH = "data/embeddings/chatbot_embeddings.json"

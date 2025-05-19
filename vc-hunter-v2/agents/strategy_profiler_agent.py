@@ -1,12 +1,11 @@
+
 import os
 import json
 from dotenv import load_dotenv
 import sys
-
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
-from utils.llm_client import llm_chat, count_tokens
 
-token_usage_total = 0
+from utils.llm_client import llm_chat, count_tokens
 
 load_dotenv()
 
@@ -14,19 +13,21 @@ INPUT_DIR = "data/raw/strategy"
 OUTPUT_DIR = "data/classified/strategy"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+token_usage_total = 0
+
 def extract_strategy_tags(text: str):
-    global token_usage_total
     prompt = f"""
-    As a venture capital analyst preparing a strategic review, extract 3-7 key strategic themes or focus areas mentioned in the following description of a VC firm's investment thesis. Use concise phrases such as: “AI-first SaaS”, “Bioinformatics”, “Frontier Tech”, “Cloud-native apps”, “Verticalized Marketplaces”, etc.
+    You are a strategic analyst. Review the following startup description and identify key strategic themes or positioning angles.
 
     Text:
     {text}
 
-    Respond with a JSON list of concise tags (strings only).
+    Return a JSON list of 3-6 strategic tags (strings only), such as "platform play", "deep tech", "government alignment", "consumer convenience", etc.
     """
     try:
         messages = [{"role": "user", "content": prompt}]
         response = llm_chat(messages)
+        global token_usage_total
         token_usage_total += count_tokens(messages)
         return json.loads(response)
     except Exception as e:

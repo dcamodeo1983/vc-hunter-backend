@@ -3,7 +3,7 @@ import asyncio
 from playwright.async_api import async_playwright
 import json
 import os
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 async def scrape_with_playwright(url):
     try:
         async with async_playwright() as p:

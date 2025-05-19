@@ -7,3 +7,4 @@ matplotlib
 scikit-learn
 openai
 python-dotenv     # optional, but good if you ever use .env files
+tiktoken

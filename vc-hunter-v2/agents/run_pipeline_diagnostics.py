@@ -1,5 +1,5 @@
 import subprocess
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 agents = [
     ("Sector Classifier", "python3 agents/sector_classifier_agent.py"),
     ("Strategy Profiler", "python3 agents/strategy_profiler_agent.py"),

@@ -49,3 +49,15 @@ def llm_embed(text: str, model: str = "text-embedding-ada-002"):
     except Exception as e:
         print(f"❌ LLM embedding error: {e}")
         raise
+
+def get_embedding(text, model="text-embedding-ada-002"):
+    try:
+        response = client.embeddings.create(
+            input=[text],
+            model=model
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        print(f"❌ Embedding error: {e}")
+        return None
+

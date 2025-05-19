@@ -44,7 +44,7 @@ Respond in the following JSON format:
         return {"score": 0, "justification": "LLM error"}
 
 def process_all():
-    from utils.file_manager import load_vc_summaries
+    from utils.file_utils import load_jsonl
     summaries = load_vc_summaries()
     for vc_name, summary in summaries.items():
         strategy = load_strategy_profile(vc_name)

@@ -2,7 +2,7 @@ import os
 import json
 from dotenv import load_dotenv
 import sys
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.llm_client import llm_chat, count_tokens
 token_usage_total = 0
 

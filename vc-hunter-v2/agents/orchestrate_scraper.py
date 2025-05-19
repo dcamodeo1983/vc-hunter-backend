@@ -1,7 +1,7 @@
 
 import subprocess
 import os
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 print("🚀 Starting requests-based scraper...")
 subprocess.run(["python3", "agents/generalized_scraper.py"])
 

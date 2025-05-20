@@ -1,7 +1,9 @@
 
 # chatbot_pipeline_runner.py
 
+import sys
 import os
+sys.path.append(os.path.join(os.path.dirname(__file__), "vc-hunter-v2"))
 import time
 from agents.vc_scraper_agent import VCScraperAgent
 from agents.strategy_profiler_agent import StrategyProfilerAgent

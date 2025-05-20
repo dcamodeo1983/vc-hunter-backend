@@ -46,7 +46,10 @@ def main():
             print("⚠️ No relevant documents found.")
             continue
 
-        context = "\n---\n".join([f"{chunk['vc_name']}:\n{chunk.get('text', '')}" for chunk in top_chunks])
+        context = "
+---
+".join([f"{chunk['vc_name']}:
+{chunk.get('text', '')}" for chunk in top_chunks])
 
         prompt = f"""
 Answer the user's question based on the following embedded VC strategy summaries. If you are unsure, say you don't have enough information.

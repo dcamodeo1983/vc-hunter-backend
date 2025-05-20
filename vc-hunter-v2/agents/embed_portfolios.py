@@ -4,7 +4,7 @@ import json
 import boto3
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 REGION = "us-east-1"
-MODEL_ID = "amazon.titan-embed-text-v2:0"
+MODEL_ID = "text-embedding-3-small"
 INPUT_DIR = "data/raw/portfolio"
 OUTPUT_FILE = "data/embeddings/portfolio_embeddings.json"
 

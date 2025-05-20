@@ -18,6 +18,9 @@ OUTPUT_PATH = "vc-hunter-v2/data/analysis/behavior_consistency"
 VC_PROFILES_PATH = "vc-hunter-v2/data/processed/vc_profiles.jsonl"
 os.makedirs(OUTPUT_PATH, exist_ok=True)
 
+def slugify(name):
+    return name.replace(" ", "").replace(".", "").replace(",", "")
+
 class BehaviorScorer:
     def __init__(self, strategy_path=STRATEGY_PATH, profiles_path=VC_PROFILES_PATH, output_dir=OUTPUT_PATH):
         self.strategy_path = strategy_path
@@ -25,7 +28,8 @@ class BehaviorScorer:
         self.output_dir = output_dir
 
     def load_strategy_profile(self, vc_name):
-        path = os.path.join(self.strategy_path, f"{vc_name}.json")
+        filename = f"{slugify(vc_name)}.json"
+        path = os.path.join(self.strategy_path, filename)
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
@@ -56,7 +60,7 @@ Respond in the following JSON format:
 
     def run(self):
         summaries = load_jsonl(self.profiles_path)
-        summaries = {item["name"]: item["summary"] for item in summaries}
+        summaries = {slugify(item["name"]): item["summary"] for item in summaries}
 
         for vc_name, summary in summaries.items():
             strategy = self.load_strategy_profile(vc_name)
@@ -73,7 +77,6 @@ Respond in the following JSON format:
                 json.dump(result, f, indent=2)
 
         print("🏁 Behavior consistency scoring complete.")
-
 
 if __name__ == "__main__":
     scorer = BehaviorScorer()

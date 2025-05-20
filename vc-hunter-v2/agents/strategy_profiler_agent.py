@@ -1,52 +1,52 @@
-# strategy_profiler_agent.py
+# chatbot_console.py
 
 import os
 import json
-from utils.llm_client import llm_chat
-from tqdm import tqdm
+import numpy as np
+from utils.llm_client import get_embedding, llm_chat
 
-INPUT_DIR = "vc-hunter-v2/data/raw/vcs"
-OUTPUT_DIR = "vc-hunter-v2/data/classified/strategy"
+EMBEDDING_PATH = "vc-hunter-v2/data/embeddings/vc_embeddings.json"
 
-def slugify(name):
-    return name.replace(" ", "").replace(".", "").replace(",", "")
 
-class StrategyProfilerAgent:
-    def __init__(self, input_dir=INPUT_DIR, output_dir=OUTPUT_DIR):
-        self.input_dir = input_dir
-        self.output_dir = output_dir
-        os.makedirs(self.output_dir, exist_ok=True)
+def cosine_similarity(a, b):
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
-    def run(self):
-        for fname in tqdm(os.listdir(self.input_dir), desc="Profiling strategy"):
-            if not fname.endswith(".jsonl"):
-                continue
-            path = os.path.join(self.input_dir, fname)
-            with open(path, "r", encoding="utf-8") as f:
-                lines = [json.loads(line) for line in f if line.strip()]
-                text = "\n\n".join([entry.get("content", "") for entry in lines])
 
-            prompt = f"""
-You are an analyst reviewing a VC firm's public website content. Extract 3-5 key strategic tags and a short paragraph summarizing their investment focus and thesis.
+def retrieve_relevant_passages(query_embedding, top_k=3):
+    if not os.path.exists(EMBEDDING_PATH):
+        print(f"❌ Embedding file not found: {EMBEDDING_PATH}")
+        return []
 
-VC Content:
-{text}
+    with open(EMBEDDING_PATH, "r", encoding="utf-8") as f:
+        vectors = json.load(f)
 
-Respond in the following JSON format:
-{{
-  "tags": [str],
-  "summary": str
-}}
-"""
+    for chunk in vectors:
+        chunk["similarity"] = cosine_similarity(query_embedding, chunk["embedding"])
 
-            try:
-                response = llm_chat([{"role": "user", "content": prompt}])
-                result = json.loads(response)
-                outname = slugify(fname.replace(".jsonl", "")) + ".json"
-                with open(os.path.join(self.output_dir, outname), "w", encoding="utf-8") as out:
-                    json.dump(result, out, indent=2)
-            except Exception as e:
-                print(f"❌ Failed to profile {fname}: {e}")
+    ranked = sorted(vectors, key=lambda x: x["similarity"], reverse=True)
+    return ranked[:top_k]
 
-if __name__ == "__main__":
-    StrategyProfilerAgent().run()
+
+def main():
+    print("\n🧠 VC Hunter Terminal Chatbot Ready")
+    print("Type your questions about VC firms or strategy. Press Enter with no input to exit.\n")
+
+    while True:
+        query = input("🔍 Your question (press Enter to quit):\n> ").strip()
+        if not query:
+            break
+
+        print("🔄 Embedding your query...")
+        query_embedding = get_embedding(query)
+
+        print("📚 Retrieving top relevant documents...")
+        top_chunks = retrieve_relevant_passages(query_embedding)
+
+        if not top_chunks:
+            print("⚠️ No relevant documents found.")
+            continue
+
+        context = "
+---
+".join([f"{chunk['vc_name']}:
+{chunk.get('text', '')}" for chunk in top_chunks])

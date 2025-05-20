@@ -2,17 +2,15 @@ import os
 import json
 import sys
 
-# Ensure parent directory is in path for importing shared utils
+# Add parent directory to sys.path to access utils
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from utils.llm_client import get_embedding
 
-# Paths
 INPUT_DIR = "data/fusion_docs"
 OUTPUT_FILE = "data/embeddings/vc_embeddings.json"
 
 def embed_text(text):
-    """Get OpenAI embedding from llm_client.py"""
     return get_embedding(text)
 
 def main():

@@ -2,6 +2,9 @@
 
 import os
 import time
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), "vc-hunter-v2"))
+
 from agents.vc_scraper_agent import VCScraperAgent
 from agents.strategy_profiler_agent import StrategyProfilerAgent
 from agents.behavior_consistency_scorer import BehaviorScorer
@@ -9,6 +12,7 @@ from agents.vc_fusion_builder import FusionBuilder
 from agents.embed_vc_fusions import embed_text, OUTPUT_FILE
 from utils.llm_client import get_embedding
 import json
+
 
 # Constants
 RAW_VC_DIR = "vc-hunter-v2/data/raw/vcs"

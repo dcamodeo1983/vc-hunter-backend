@@ -1,46 +1,51 @@
-import os
 import json
 import numpy as np
+from openai import OpenAI
 from dotenv import load_dotenv
-from utils.llm_client import llm_chat
-from utils.embed_utils import get_embedding, cosine_similarity
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import os
 
 load_dotenv()
-EMBED_PATH = "data/embeddings/chatbot_embeddings.json"
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+EMBEDDINGS_FILE = "data/embeddings/vc_hunter_all_embeddings.jsonl"
+
+def load_embeddings(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return [json.loads(line.strip()) for line in f]
+
+def cosine_similarity(a, b):
+    a, b = np.array(a), np.array(b)
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+def get_embedding(text, model="text-embedding-3-small"):
+    response = client.embeddings.create(input=[text], model=model)
+    return response.data[0].embedding
 
 def retrieve_relevant_passages(query_embedding, top_k=5):
-    with open(EMBED_PATH, "r", encoding="utf-8") as f:
-        chunks = [json.loads(line) for line in f]
-
+    chunks = load_embeddings(EMBEDDINGS_FILE)
     for chunk in chunks:
         chunk["similarity"] = cosine_similarity(query_embedding, chunk["embedding"])
-
-    return sorted(chunks, key=lambda x: x["similarity"], reverse=True)[:top_k]
-
-def ask_chatgpt(query, context_chunks):
-    context = "\n\n---\n\n".join(
-        f"{c['type'].upper()} - {c['vc_name']}:\n{c.get('tagged_text') or c.get('content')}" for c in context_chunks
-    )
-    prompt = f"""Using the following information:
-
-{context}
-
-Answer the question: {query}"""
-    return llm_chat(prompt)
+    sorted_chunks = sorted(chunks, key=lambda x: x["similarity"], reverse=True)
+    return sorted_chunks[:top_k]
 
 def main():
+    print("\n🧠 VC Hunter Terminal Chatbot Ready")
+    print("Type your questions about VC firms or strategy. Press Enter with no input to exit.\n")
+
     while True:
-        query = input("\n🔍 Ask a question about any VC firm (press Enter to quit):\n> ").strip()
+        query = input("🔍 Your question (press Enter to quit):\n> ").strip()
         if not query:
             break
-        print("🔄 Embedding your question...")
-        embedding = get_embedding(query)
+
+        print("🔄 Embedding your query...")
+        query_embedding = get_embedding(query)
+
         print("📚 Retrieving top relevant documents...")
-        top_chunks = retrieve_relevant_passages(embedding, top_k=5)
-        print("💬 Generating response with GPT...\n")
-        answer = ask_chatgpt(query, top_chunks)
-        print(f"\n🧠 Answer:\n{answer}")
+        top_chunks = retrieve_relevant_passages(query_embedding)
+
+        print("\n💡 Top Relevant Insights:")
+        for i, chunk in enumerate(top_chunks, 1):
+            print(f"#{i} — {chunk.get('source', 'unknown')}:\n{chunk.get('content', '')[:400]}\n")
 
 if __name__ == "__main__":
     main()

@@ -32,7 +32,7 @@ def llm_chat(messages, model="gpt-3.5-turbo", temperature=0.3):
         print(f"❌ LLM chat error: {e}")
         return None
 
-def get_embedding(text, model="text-embedding-ada-002"):
+def get_embedding(text, model="text-embedding-3-small"):
     try:
         response = client.embeddings.create(
             input=[text],

@@ -1,61 +1,46 @@
-
 import os
 import json
-from openai import OpenAI
-from dotenv import load_dotenv
+import sys
+
+# Ensure parent directory is in path for importing shared utils
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-FUSION_DIR = "data/fusions"
-THESIS_DIR = "data/raw/vcs"
-OUTPUT_PATH = "data/embeddings/chatbot_embeddings.json"
+from utils.llm_client import get_embedding
 
-def get_embedding(text):
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=text
-    )
-    return response.data[0].embedding
+# Paths
+INPUT_DIR = "data/fusion_docs"
+OUTPUT_FILE = "data/embeddings/vc_embeddings.json"
 
-def tag_text(vc_name, content, doc_type):
-    if doc_type == "fusion":
-        return f"TYPE: FUSION\nVC: {vc_name}\nSUMMARY:\n{content.strip()}"
-    else:
-        return f"TYPE: THESIS\nVC: {vc_name}\nCONTENT:\n{content.strip()}"
+def embed_text(text):
+    """Get OpenAI embedding from llm_client.py"""
+    return get_embedding(text)
 
-def embed_directory(directory, doc_type):
-    records = []
-    for fname in os.listdir(directory):
-        if not fname.endswith(".jsonl"):
+def main():
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+    embeddings = []
+
+    for fname in os.listdir(INPUT_DIR):
+        if not fname.endswith(".txt"):
             continue
-        vc_name = fname.replace(".jsonl", "")
-        path = os.path.join(directory, fname)
+        path = os.path.join(INPUT_DIR, fname)
         with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        for line in lines:
-            data = json.loads(line)
-            content = data.get("content", "")
-            tagged = tag_text(vc_name, content, doc_type)
-            embedding = get_embedding(tagged)
-            records.append({
-                "vc_name": vc_name,
-                "type": doc_type,
-                "tagged_text": tagged,
-                "embedding": embedding
-            })
-    return records
+            text = f.read().strip()
+            if not text:
+                continue
+            try:
+                vector = embed_text(text)
+                embeddings.append({
+                    "vc_name": fname.replace(".txt", ""),
+                    "type": "vc_fusion",
+                    "embedding": vector
+                })
+                print(f"✅ Embedded {fname}")
+            except Exception as e:
+                print(f"❌ Failed to embed {fname}: {e}")
 
-def embed_all():
-    all_records = []
-    all_records.extend(embed_directory(FUSION_DIR, "fusion"))
-    all_records.extend(embed_directory(THESIS_DIR, "thesis"))
-
-    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
-        json.dump(all_records, f, indent=2)
-
-    print(f"✅ Embedded {len(all_records)} items to {OUTPUT_PATH}")
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(embeddings, f, indent=2)
+    print(f"✅ Saved {len(embeddings)} VC embeddings to {OUTPUT_FILE}")
 
 if __name__ == "__main__":
-    embed_all()
+    main()

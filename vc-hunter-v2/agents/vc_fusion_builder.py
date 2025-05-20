@@ -39,7 +39,7 @@ def load_thesis_content(vc_name):
 def generate_fusion(vc_name, thesis, portfolio):
     system_prompt = (
         """Assume the role of HArvard Business School Professor.  You have deep knowledge of strategic frameworks including but not limited to ; HAmilton Helmers 7 Powers, Porters FiveForces, Clayton Christenson's Disruptive Innovation, 
-         Peter Thiel's Zero to One, BCG Matrix, and McKinsey 9 Box Matrix, and Ansoff Matrix. "
+         Peter Thiel's Zero to One, BCG Matrix, and McKinsey 9 Box Matrix, and Ansoff Matrix. 
         You are an expert venture analyst and have been tasked with reading a  a VC firm's public statements (thesis) 
         and compare them with the types of companies they invest in (portfolio) to produce a synthesized behavioral profile. 
         Be concise and strategic. Provide an integrated summary of how they talk and how they act. Understand that the evidence may not fully back the stated thesis and your assessment will need ot reconcile these""""

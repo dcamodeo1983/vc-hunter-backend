@@ -70,3 +70,9 @@ def get_total_cost_summary():
     print(f"🔗 Embedding tokens:       {embedding}")
     print(f"💵 Estimated total cost:   ${total_cost:.6f}")
     return total_cost
+
+
+def call_chat_model(prompt, model="gpt-3.5-turbo", temperature=0.3):
+    response = llm_chat([{"role": "user", "content": prompt}], model=model, temperature=temperature)
+    tokens = count_tokens(prompt, model=model)
+    return response, tokens

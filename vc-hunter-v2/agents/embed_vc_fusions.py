@@ -31,6 +31,8 @@ def main():
                     "vc_name": fname.replace(".txt", ""),
                     "type": "vc_fusion",
                     "embedding": vector
+                    "text": text,  # ✅ embed the raw text for chatbot reference
+                    "embedding": vector
                 })
                 print(f"✅ Embedded {fname}")
             except Exception as e:

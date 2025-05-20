@@ -1,9 +1,6 @@
-
 # chatbot_pipeline_runner.py
 
-import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), "vc-hunter-v2"))
 import time
 from agents.vc_scraper_agent import VCScraperAgent
 from agents.strategy_profiler_agent import StrategyProfilerAgent
@@ -19,6 +16,7 @@ STRATEGY_DIR = "vc-hunter-v2/data/classified/strategy"
 BEHAVIOR_DIR = "vc-hunter-v2/data/analysis/behavior_consistency"
 FUSION_DIR = "vc-hunter-v2/data/fusion_docs"
 EMBEDDINGS_OUTPUT = "vc-hunter-v2/data/embeddings/vc_embeddings.json"
+VC_PROFILES_PATH = "vc-hunter-v2/data/processed/vc_profiles.jsonl"
 
 # Hardcoded VC URLs for now
 vc_urls = [
@@ -42,14 +40,14 @@ def run_full_pipeline():
 
     # Step 3: Score behavior
     print("\n📊 Scoring behavioral consistency...")
-    scorer = BehaviorScorer(input_dir=STRATEGY_DIR, output_dir=BEHAVIOR_DIR)
+    scorer = BehaviorScorer(strategy_path=STRATEGY_DIR, profiles_path=VC_PROFILES_PATH, output_dir=BEHAVIOR_DIR)
     scorer.run()
 
     # Step 4: Build fusion docs
     print("\n🧬 Building fusion docs...")
     fusion_builder = FusionBuilder(
-        strategy_dir=STRATEGY_DIR,
-        behavior_dir=BEHAVIOR_DIR,
+        vc_dir=RAW_VC_DIR,
+        portfolio_path="vc-hunter-v2/data/embeddings/portfolio_embeddings.json",
         output_dir=FUSION_DIR
     )
     fusion_builder.run()

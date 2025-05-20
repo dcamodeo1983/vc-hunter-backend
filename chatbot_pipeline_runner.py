@@ -9,10 +9,9 @@ from agents.vc_scraper_agent import VCScraperAgent
 from agents.strategy_profiler_agent import StrategyProfilerAgent
 from agents.behavior_consistency_scorer import BehaviorScorer
 from agents.vc_fusion_builder import FusionBuilder
-from agents.embed_vc_fusions import embed_text, OUTPUT_FILE
+from agents.embed_vc_fusions import embed_text
 from utils.llm_client import get_embedding
 import json
-
 
 # Constants
 RAW_VC_DIR = "vc-hunter-v2/data/raw/vcs"
@@ -48,12 +47,8 @@ def run_full_pipeline():
     scorer.run()
 
     # Step 4: Build fusion docs
-    print("\n🧬 Building fusion docs...")
-    fusion_builder = FusionBuilder(
-        vc_dir=RAW_VC_DIR,
-        portfolio_path="vc-hunter-v2/data/embeddings/portfolio_embeddings.json",
-        output_dir=FUSION_DIR
-    )
+    print("\n🧬 Building fusion docs (site content only)...")
+    fusion_builder = FusionBuilder(vc_dir=RAW_VC_DIR, output_dir=FUSION_DIR)
     fusion_builder.run()
 
     # Step 5: Embed fusion docs

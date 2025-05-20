@@ -1,58 +1,54 @@
-
 import os
 import json
-from dotenv import load_dotenv
-import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/..")
+from utils.llm_client import call_chat_model
 
-from utils.llm_client import llm_chat, count_tokens
-
-load_dotenv()
-
-INPUT_DIR = "data/raw/strategy"
-OUTPUT_DIR = "data/classified/strategy"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
+INPUT_DIR = "vc-hunter-v2/data/raw/strategy"
+OUTPUT_DIR = "vc-hunter-v2/data/classified/strategy"
 token_usage_total = 0
 
-def extract_strategy_tags(text: str):
-    prompt = f"""
-    You are a strategic analyst. Review the following startup description and identify key strategic themes or positioning angles.
 
-    Text:
-    {text}
+class StrategyProfilerAgent:
+    def __init__(self, input_dir=INPUT_DIR, output_dir=OUTPUT_DIR):
+        self.input_dir = input_dir
+        self.output_dir = output_dir
 
-    Return a JSON list of 3-6 strategic tags (strings only), such as "platform play", "deep tech", "government alignment", "consumer convenience", etc.
-    """
-    try:
-        messages = [{"role": "user", "content": prompt}]
-        response = llm_chat(messages)
+    def extract_strategy_tags(self, text):
         global token_usage_total
-        token_usage_total += count_tokens(messages)
-        return json.loads(response)
-    except Exception as e:
-        print(f"❌ Error extracting strategy tags: {e}")
-        return []
+        prompt = f"""
+You are an analyst. Read the following venture capital firm strategy and extract 3–6 high-quality strategic tags that capture their focus areas, such as 'biotech', 'defense tech', 'AI infrastructure', etc.
+Respond with a comma-separated list.
 
-def process_all():
-    for fname in os.listdir(INPUT_DIR):
-        if not fname.endswith(".jsonl"):
-            continue
-        with open(os.path.join(INPUT_DIR, fname), "r", encoding="utf-8") as f:
-            lines = f.readlines()
+Strategy:
+{text}
+"""
+        response, tokens = call_chat_model(prompt)
+        token_usage_total += tokens
+        tags = [t.strip() for t in response.split(",") if t.strip()]
+        return tags
 
-        tagged = []
-        for line in lines:
-            item = json.loads(line)
-            tags = extract_strategy_tags(item.get("content", ""))
-            item["strategy_tags"] = tags
-            tagged.append(item)
+    def run(self):
+        global token_usage_total
+        os.makedirs(self.output_dir, exist_ok=True)
+        for fname in os.listdir(self.input_dir):
+            if not fname.endswith(".jsonl"):
+                continue
+            with open(os.path.join(self.input_dir, fname), "r", encoding="utf-8") as f:
+                lines = f.readlines()
 
-        with open(os.path.join(OUTPUT_DIR, fname), "w", encoding="utf-8") as out:
-            for item in tagged:
-                out.write(json.dumps(item) + "\n")
+            tagged = []
+            for line in lines:
+                item = json.loads(line)
+                tags = self.extract_strategy_tags(item.get("content", ""))
+                item["strategy_tags"] = tags
+                tagged.append(item)
 
-    print(f"✅ Strategy profiling complete. Tokens used: {token_usage_total}")
+            with open(os.path.join(self.output_dir, fname), "w", encoding="utf-8") as out:
+                for item in tagged:
+                    out.write(json.dumps(item) + "\n")
+
+        print(f"✅ Strategy profiling complete. Tokens used: {token_usage_total}")
+
 
 if __name__ == "__main__":
-    process_all()
+    agent = StrategyProfilerAgent()
+    agent.run()

@@ -1,85 +1,69 @@
+# vc_fusion_builder.py
 
 import os
 import json
-from dotenv import load_dotenv
-from openai import OpenAI
+from utils.llm_client import llm_chat
+from utils.file_utils import load_jsonl
 
-load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+VC_RAW_DIR = "vc-hunter-v2/data/raw/vcs"
+PORTFOLIO_EMBED_PATH = "vc-hunter-v2/data/embeddings/portfolio_embeddings.json"
+FUSION_OUT_DIR = "vc-hunter-v2/data/fusion_docs"
 
-INPUT_DIR = "data/embeddings/portfolio_embeddings.json"
-VC_DIR = "data/raw/vcs"
-OUTPUT_DIR = "data/fusion_docs"
+class FusionBuilder:
+    def __init__(self, vc_dir=VC_RAW_DIR, portfolio_path=PORTFOLIO_EMBED_PATH, output_dir=FUSION_OUT_DIR):
+        self.vc_dir = vc_dir
+        self.portfolio_path = portfolio_path
+        self.output_dir = output_dir
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+    def build_fusion_text(self, vc_text, portfolio_summaries):
+        portfolio_snippets = "\n\n".join(portfolio_summaries)
+        prompt = f"""
+You are an investment analyst tasked with fusing a venture capital firm's stated strategy with the behavior implied by their portfolio investments. Given their website text and a set of startup investment descriptions, synthesize a concise and coherent description (200-300 words) of how this VC behaves and what they care about. Use a neutral, professional tone.
 
-def load_portfolio_summary(vc_name):
-    try:
-        with open(INPUT_DIR, "r", encoding="utf-8") as f:
+VC Text:
+{vc_text}
+
+Portfolio:
+{portfolio_snippets}
+
+Synthesized Summary:
+"""
+        response = llm_chat([{"role": "user", "content": prompt}])
+        return response.strip()
+
+    def run(self):
+        os.makedirs(self.output_dir, exist_ok=True)
+
+        with open(self.portfolio_path, "r", encoding="utf-8") as f:
             portfolio_data = json.load(f)
-            summaries = []
-            for item in portfolio_data:
-                if item.get("vc_name") == vc_name:
-                    summaries.append(item.get("summary", ""))
-            return "\n".join(summaries)
-    except Exception as e:
-        print(f"⚠️ Error loading portfolio for {vc_name}: {e}")
-        return ""
 
-def load_thesis_content(vc_name):
-    try:
-        path = os.path.join(VC_DIR, f"{vc_name}.jsonl")
-        with open(path, "r", encoding="utf-8") as f:
-            lines = [json.loads(line).get("content", "") for line in f]
-        return "\n".join(lines)
-    except Exception as e:
-        print(f"⚠️ Error loading thesis for {vc_name}: {e}")
-        return ""
+        for fname in os.listdir(self.vc_dir):
+            if not fname.endswith(".jsonl"):
+                continue
 
-def generate_fusion(vc_name, thesis, portfolio):
-    system_prompt = (
-        """Assume the role of HArvard Business School Professor.  You have deep knowledge of strategic frameworks including but not limited to ; HAmilton Helmers 7 Powers, Porters FiveForces, Clayton Christenson's Disruptive Innovation, 
-         Peter Thiel's Zero to One, BCG Matrix, and McKinsey 9 Box Matrix, and Ansoff Matrix. 
-        You are an expert venture analyst and have been tasked with reading a  a VC firm's public statements (thesis) 
-        and compare them with the types of companies they invest in (portfolio) to produce a synthesized behavioral profile. 
-        Be concise and strategic. Provide an integrated summary of how they talk and how they act. Understand that the evidence may not fully back the stated thesis and your assessment will need ot reconcile these"""
-    )
+            vc_name = fname.replace(".jsonl", "")
+            vc_path = os.path.join(self.vc_dir, fname)
 
-    user_prompt = (
-        f"THESIS:\n{thesis}\n\n"
-        f"PORTFOLIO SIGNALS:\n{portfolio}\n\n"
-        "Write a behavioral intelligence summary of this VC's true investment behavior."
-    )
+            with open(vc_path, "r", encoding="utf-8") as f:
+                vc_lines = f.readlines()
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.6,
-            max_tokens=800
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"❌ Error creating fusion doc for {vc_name}:\n{e}")
-        return None
+            vc_text = "\n\n".join([json.loads(line)["content"] for line in vc_lines if line.strip()])
 
-def main():
-    vc_names = [f.replace(".jsonl", "") for f in os.listdir(VC_DIR) if f.endswith(".jsonl")]
-    for vc in vc_names:
-        thesis = load_thesis_content(vc)
-        portfolio = load_portfolio_summary(vc)
-        if not thesis:
-            print(f"⚠️ Skipping {vc}: no thesis data found.")
-            continue
+            portfolio_summaries = [entry["content"] for entry in portfolio_data if entry.get("vc_name") == vc_name and "content" in entry]
+            if not portfolio_summaries:
+                print(f"⚠️ Skipping {vc_name}: no portfolio summaries found.")
+                continue
 
-        fusion = generate_fusion(vc, thesis, portfolio)
-        if fusion:
-            with open(f"{OUTPUT_DIR}/{vc}.txt", "w", encoding="utf-8") as f:
-                f.write(fusion)
-            print(f"✅ Fusion doc written for {vc}")
+            try:
+                fused = self.build_fusion_text(vc_text, portfolio_summaries)
+                out_path = os.path.join(self.output_dir, f"{vc_name}.txt")
+                with open(out_path, "w", encoding="utf-8") as out:
+                    out.write(fused)
+                print(f"✅ Fused: {vc_name}")
+            except Exception as e:
+                print(f"❌ Failed to build fusion for {vc_name}: {e}")
+
 
 if __name__ == "__main__":
-    main()
+    builder = FusionBuilder()
+    builder.run()

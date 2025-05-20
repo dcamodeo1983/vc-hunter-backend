@@ -1,30 +1,20 @@
-
 import os
 import json
-import boto3
+import sys  # ✅ Required for path manipulation
+
+# Add parent directory to sys.path to access utils
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-REGION = "us-east-1"
-MODEL_ID = "text-embedding-3-small"
+
+from utils.llm_client import get_embedding  # ✅ Uses your OpenAI wrapper
+
 INPUT_DIR = "data/fusion_docs"
 OUTPUT_FILE = "data/embeddings/vc_embeddings.json"
 
-def get_bedrock_client():
-    return boto3.client("bedrock-runtime", region_name=REGION)
-
-def embed_text(text, client):
-    body = json.dumps({ "inputText": text[:8000] })
-    response = client.invoke_model(
-        modelId=MODEL_ID,
-        contentType="application/json",
-        accept="application/json",
-        body=body
-    )
-    response_body = json.loads(response["body"].read())
-    return response_body["embedding"]
+def embed_text(text):
+    return get_embedding(text)
 
 def main():
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-    client = get_bedrock_client()
     embeddings = []
 
     for fname in os.listdir(INPUT_DIR):
@@ -36,7 +26,7 @@ def main():
             if not text:
                 continue
             try:
-                vector = embed_text(text, client)
+                vector = embed_text(text)
                 embeddings.append({
                     "vc_name": fname.replace(".txt", ""),
                     "type": "vc_fusion",

@@ -1,4 +1,3 @@
-
 import os
 import json
 import random
@@ -8,7 +7,7 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 class VCScraperAgent:
-    def __init__(self, vc_urls, output_dir="data/raw", sample_size=10):
+    def __init__(self, vc_urls, output_dir="vc-hunter-v2/data/raw/vcs", sample_size=10):
         self.vc_urls = vc_urls
         self.output_dir = output_dir
         self.sample_size = sample_size
@@ -38,6 +37,7 @@ class VCScraperAgent:
             if any(k in href.lower() or k in text for k in ["portfolio", "companies", "investments"]):
                 full_url = href if href.startswith("http") else base_url + href
                 links.append(full_url)
+        print(f"🔗 Discovered {len(links)} portfolio links on {base_url}")
         return list(set(links))
 
     def extract_company_links(self, portfolio_page):
@@ -47,6 +47,7 @@ class VCScraperAgent:
             href = a['href']
             if href.startswith("http") and not any(s in href for s in ["linkedin", "twitter"]):
                 company_links.add(href)
+        print(f"🏢 Extracted {len(company_links)} company links")
         return list(company_links)
 
     def scrape_company_shallow(self, url):
@@ -65,13 +66,13 @@ class VCScraperAgent:
         with open(filepath, "w", encoding="utf-8") as f:
             for r in records:
                 f.write(json.dumps(r) + "\n")
+        print(f"💾 Saved {len(records)} records to {filepath}")
 
     def run(self):
         all_records = []
 
         for vc_url in tqdm(self.vc_urls, desc="Scraping VC websites"):
             base_domain = urlparse(vc_url).netloc.replace(".", "_")
-
             vc_home_html = self.fetch_page(vc_url)
             if not vc_home_html:
                 continue
@@ -101,4 +102,3 @@ class VCScraperAgent:
                     })
 
         self.save_jsonl("vc_scraped_data.jsonl", all_records)
-        print(f"✅ Finished. Saved {len(all_records)} records to {self.output_dir}/vc_scraped_data.jsonl")

@@ -6,6 +6,7 @@ from utils.llm_client import llm_chat
 
 VC_RAW_DIR = "vc-hunter-v2/data/raw/vcs"
 FUSION_OUT_DIR = "vc-hunter-v2/data/fusion_docs"
+BEHAVIOR_DIR = "vc-hunter-v2/data/analysis/behavior_consistency"
 
 class FusionBuilder:
     def __init__(self, vc_dir=VC_RAW_DIR, output_dir=FUSION_OUT_DIR):
@@ -44,6 +45,16 @@ Synthesis:
 
             try:
                 fused = self.build_fusion_text(vc_text)
+
+                # 🧠 Inject behavior score if available
+                behavior_path = os.path.join(BEHAVIOR_DIR, f"{vc_name}.json")
+                if os.path.exists(behavior_path):
+                    with open(behavior_path, "r", encoding="utf-8") as b:
+                        behavior = json.load(b)
+                        score = behavior.get("score", "N/A")
+                        justification = behavior.get("justification", "")
+                        fused += f"\n\n🤖 Behavior Consistency Score: {score}\nJustification: {justification}"
+
                 out_path = os.path.join(self.output_dir, f"{vc_name}.txt")
                 with open(out_path, "w", encoding="utf-8") as out:
                     out.write(fused)

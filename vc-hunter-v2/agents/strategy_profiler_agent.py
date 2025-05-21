@@ -7,6 +7,15 @@ from utils.llm_client import get_embedding, llm_chat
 
 EMBEDDING_PATH = "vc-hunter-v2/data/embeddings/vc_embeddings.json"
 
+class StrategyProfilerAgent:
+    def __init__(self, input_dir="vc-hunter-v2/data/raw/vcs", output_dir="vc-hunter-v2/data/classified/strategy"):
+        self.input_dir = input_dir
+        self.output_dir = output_dir
+
+    def run(self):
+        # Loop through files in input_dir and call OpenAI to summarize
+        pass  # ← placeholder logic
+
 
 def cosine_similarity(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
@@ -46,7 +55,7 @@ def main():
             print("⚠️ No relevant documents found.")
             continue
 
-        context = "
----
-".join([f"{chunk['vc_name']}:
-{chunk.get('text', '')}" for chunk in top_chunks])
+if __name__ == "__main__":
+    StrategyProfilerAgent().run()
+
+

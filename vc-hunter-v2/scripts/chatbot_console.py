@@ -1,6 +1,8 @@
 # chatbot_console.py
 
 import os
+import sys, os
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 import json
 import numpy as np
 from utils.llm_client import get_embedding, llm_chat
@@ -50,9 +52,8 @@ def main():
 
 
 
----
-".join([f"{chunk['vc_name']}:
-{chunk.get('text', '')}" for chunk in top_chunks])
+
+
 
         prompt = f"""
 Answer the user's question based on the following embedded VC strategy summaries. If you are unsure, say you don't have enough information.

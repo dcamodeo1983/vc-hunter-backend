@@ -7,8 +7,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from utils.llm_client import get_embedding  # ✅ Uses your OpenAI wrapper
 
-INPUT_DIR = "data/fusion_docs"
-OUTPUT_FILE = "data/embeddings/vc_embeddings.json"
+INPUT_DIR = "vc-hunter-v2/data/fusion_docs"
+OUTPUT_FILE = "vc-hunter-v2/data/embeddings/vc_embeddings.json"
 
 def embed_text(text):
     return get_embedding(text)

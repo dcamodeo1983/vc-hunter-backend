@@ -25,7 +25,7 @@ VC_PROFILES_PATH = "vc-hunter-v2/data/processed/vc_profiles.jsonl"
 vc_urls = [
     "https://8vc.com",
     "https://www.sequoiacap.com",
-    "https://www.andreessenhorowitz.com"
+    "https://www.az16.com"
 ]
 
 def run_full_pipeline():

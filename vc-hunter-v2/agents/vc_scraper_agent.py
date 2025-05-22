@@ -1,14 +1,13 @@
+# vc_scraper_agent.py
+
 import os
 import json
 import random
 import requests
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
-MAX_INTERNAL_PAGES = 5
-MIN_SAMPLE = 20
-MIN_SAMPLE_RATIO = 0.2
 
 class VCScraperAgent:
     def __init__(self, vc_urls, output_dir="vc-hunter-v2/data/raw/vcs", sample_size=10):
@@ -19,7 +18,7 @@ class VCScraperAgent:
 
     def clean_html(self, html):
         soup = BeautifulSoup(html, "html.parser")
-        for tag in soup(["script", "style", "nav", "footer", "noscript"]):
+        for tag in soup(["script", "style", "nav", "footer"]):
             tag.decompose()
         return soup.get_text(separator="\n")
 
@@ -27,7 +26,7 @@ class VCScraperAgent:
         try:
             response = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
             response.raise_for_status()
-            return response.text
+            return self.clean_html(response.text)
         except Exception as e:
             print(f"[ERROR] Failed to fetch {url}: {e}")
             return ""
@@ -39,68 +38,43 @@ class VCScraperAgent:
             href = a['href']
             text = a.get_text().lower()
             if any(k in href.lower() or k in text for k in ["portfolio", "companies", "investments"]):
-                full_url = href if href.startswith("http") else urljoin(base_url, href)
+                full_url = href if href.startswith("http") else base_url.rstrip("/") + "/" + href.lstrip("/")
                 links.append(full_url)
         return list(set(links))
 
     def extract_company_links(self, portfolio_page):
-    soup = BeautifulSoup(portfolio_page, "html.parser")
-    company_links = set()
-    for a in soup.find_all("a", href=True):
-        href = a['href']
+        soup = BeautifulSoup(portfolio_page, "html.parser")
+        company_links = set()
+        for a in soup.find_all("a", href=True):
+            href = a['href']
 
-        # Skip non-HTTP(s) links
-        if not href.startswith("http"):
-            print(f"[SKIP] Not HTTP: {href}")
-            continue
+            # Skip non-HTTP(s) links
+            if not href.startswith("http"):
+                print(f"[SKIP] Not HTTP: {href}")
+                continue
 
-        # Skip known non-company links (social, email, scripts)
-        if any(s in href.lower() for s in ["linkedin", "twitter", "mailto", "javascript", "x.com"]):
-            print(f"[SKIP] Social/email/script: {href}")
-            continue
+            # Skip known non-company links
+            if any(s in href.lower() for s in ["linkedin", "twitter", "mailto", "javascript", "x.com"]):
+                print(f"[SKIP] Social/email/script: {href}")
+                continue
 
-        company_links.add(href)
-    return list(company_links)
+            company_links.add(href)
+        return list(company_links)
 
-
-    def scrape_internal_pages(self, url, limit=MAX_INTERNAL_PAGES):
-        pages = []
-        try:
-            response = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-            soup = BeautifulSoup(response.text, "html.parser")
-            links = soup.find_all("a", href=True)
-            visited = set()
-            for a in links:
-                href = a['href']
-                if not href.startswith("http") and not href.startswith("#"):
-                    full_url = urljoin(url, href)
-                    if full_url not in visited:
-                        visited.add(full_url)
-                        html = self.fetch_page(full_url)
-                        pages.append(self.clean_html(html))
-                        if len(pages) >= limit:
-                            break
-        except Exception as e:
-            print(f"[ERROR] Failed to fetch internal pages for {url}: {e}")
-        return pages
-
-    def scrape_company(self, url):
+    def scrape_company_shallow(self, url):
         html = self.fetch_page(url)
-        if not html:
-            return None
         soup = BeautifulSoup(html, "html.parser")
         meta = soup.find("meta", attrs={"name": "description"})
         description = meta["content"] if meta and "content" in meta.attrs else ""
-        internal_pages = self.scrape_internal_pages(url)
         return {
             "company_url": url,
             "description": description,
-            "internal_pages": internal_pages,
-            "raw_text": self.clean_html(html)[:2000]
+            "raw_text": html[:1500]
         }
 
     def save_jsonl(self, filename, records):
-        with open(os.path.join(self.output_dir, filename), "w", encoding="utf-8") as f:
+        filepath = os.path.join(self.output_dir, filename)
+        with open(filepath, "w", encoding="utf-8") as f:
             for r in records:
                 f.write(json.dumps(r) + "\n")
 
@@ -109,6 +83,7 @@ class VCScraperAgent:
 
         for vc_url in tqdm(self.vc_urls, desc="Scraping VC websites"):
             base_domain = urlparse(vc_url).netloc.replace(".", "_")
+
             vc_home_html = self.fetch_page(vc_url)
             if not vc_home_html:
                 continue
@@ -116,38 +91,35 @@ class VCScraperAgent:
             all_records.append({
                 "source": vc_url,
                 "type": "vc_thesis",
-                "content": self.clean_html(vc_home_html)
+                "content": vc_home_html
             })
 
             portfolio_links = self.discover_portfolio_links(vc_home_html, vc_url)
+            print(f"🔗 Discovered {len(portfolio_links)} portfolio links on {vc_url}")
+
             if not portfolio_links:
                 continue
 
             for portfolio_url in portfolio_links:
-                portfolio_html = self.fetch_page(portfolio_url)
-                company_links = self.extract_company_links(portfolio_html)
-                if not company_links:
+                portfolio_page = self.fetch_page(portfolio_url)
+                if not portfolio_page:
                     continue
 
-                # Intelligent sampling logic
-                n = len(company_links)
-                if n <= 50:
-                    sample = company_links
-                else:
-                    min_sample = max(int(n * MIN_SAMPLE_RATIO), MIN_SAMPLE)
-                    sample = random.sample(company_links, min(n, min_sample))
+                company_urls = self.extract_company_links(portfolio_page)
+                if not company_urls:
+                    print(f"[INFO] No valid company URLs found at {portfolio_url}")
+                    continue
 
-                for company_url in sample:
-                    data = self.scrape_company(company_url)
-                    if data:
-                        all_records.append({
-                            "source": vc_url,
-                            "type": "portfolio_shallow",
-                            "company_url": company_url,
-                            "description": data["description"],
-                            "raw_text": data["raw_text"],
-                            "internal_pages": data["internal_pages"]
-                        })
+                sampled = random.sample(company_urls, min(self.sample_size, len(company_urls)))
+
+                for company_url in sampled:
+                    data = self.scrape_company_shallow(company_url)
+                    all_records.append({
+                        "source": vc_url,
+                        "type": "portfolio_shallow",
+                        "company_url": company_url,
+                        "content": data["description"] or data["raw_text"]
+                    })
 
         self.save_jsonl("vc_scraped_data.jsonl", all_records)
         print(f"✅ Finished. Saved {len(all_records)} records to {self.output_dir}/vc_scraped_data.jsonl")

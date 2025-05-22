@@ -43,14 +43,25 @@ class VCScraperAgent:
                 links.append(full_url)
         return list(set(links))
 
-    def extract_company_links(self, portfolio_html):
-        soup = BeautifulSoup(portfolio_html, "html.parser")
-        links = set()
-        for a in soup.find_all("a", href=True):
-            href = a['href']
-            if href.startswith("http") and not any(x in href for x in ["linkedin", "twitter", "facebook"]):
-                links.add(href)
-        return list(links)
+    def extract_company_links(self, portfolio_page):
+    soup = BeautifulSoup(portfolio_page, "html.parser")
+    company_links = set()
+    for a in soup.find_all("a", href=True):
+        href = a['href']
+
+        # Skip non-HTTP(s) links
+        if not href.startswith("http"):
+            print(f"[SKIP] Not HTTP: {href}")
+            continue
+
+        # Skip known non-company links (social, email, scripts)
+        if any(s in href.lower() for s in ["linkedin", "twitter", "mailto", "javascript", "x.com"]):
+            print(f"[SKIP] Social/email/script: {href}")
+            continue
+
+        company_links.add(href)
+    return list(company_links)
+
 
     def scrape_internal_pages(self, url, limit=MAX_INTERNAL_PAGES):
         pages = []

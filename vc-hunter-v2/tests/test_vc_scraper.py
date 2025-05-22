@@ -1,9 +1,13 @@
 # test_vc_scraper.py
+import sys
+import os
 
-from vc_hunter_v2.agents.vc_scraper_agent import VCScraperAgent
+# Ensure the parent directory is in sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# 🔍 Test with one known VC URL
-vc_urls = ["https://www.8vc.com"]
+from agents.vc_scraper_agent import VCScraperAgent
 
-scraper = VCScraperAgent(vc_urls=vc_urls, output_dir="vc-hunter-v2/data/raw/vcs", sample_size=5)
-scraper.run()
+if __name__ == "__main__":
+    vc_urls = ["https://www.8vc.com"]
+    scraper = VCScraperAgent(vc_urls=vc_urls, output_dir="vc-hunter-v2/data/raw/vcs", sample_size=5)
+    scraper.run()

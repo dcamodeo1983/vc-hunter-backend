@@ -7,7 +7,7 @@ import json
 # Ensure project root is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from vc_hunter_v2.agents.vc_scraper_agent import VCScraperAgent
+from agents.vc_scraper_agent import VCScraperAgent
 
 def test_scraper_on_single_vc():
     vc_urls = ["https://www.8vc.com"]

@@ -5,7 +5,8 @@ import os
 import json
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from vc_hunter_v2.agents.vc_scraper_agent import VCScraperAgent  # 👈 Still invalid
+from vc_hunter.agents.vc_scraper_agent import VCScraperAgent
+
 
 
 def test_scraper_on_single_vc():

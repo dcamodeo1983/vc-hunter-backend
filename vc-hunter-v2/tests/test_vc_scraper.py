@@ -3,9 +3,8 @@
 import sys
 import os
 import json
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "vc-hunter-v2")))
-from agents.vc_scraper_agent import VCScraperAgent
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../agents')))
 
 
 

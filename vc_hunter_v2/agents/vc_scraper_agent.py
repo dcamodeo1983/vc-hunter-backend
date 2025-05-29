@@ -1,3 +1,4 @@
+
 # vc_scraper_agent.py
 import os
 import json
@@ -6,6 +7,7 @@ import random
 from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+
 
 class VCScraperAgent:
     def __init__(self, vc_urls, output_dir="vc-hunter-v2/data/raw/vcs", sample_size=20):
@@ -54,57 +56,58 @@ class VCScraperAgent:
         print(f"🔗 Discovered {len(urls)} portfolio links on {homepage_url}")
         return list(urls)
 
-    def extract_company_links(self, page, url):
-        html = self.fetch_with_retries(page, url)
+    def extract_company_links(self, page):
         links = page.locator("a")
-        urls = set()
+        company_urls = set()
 
         for i in range(links.count()):
             href = links.nth(i).get_attribute("href")
             if self.is_valid_link(href):
-                urls.add(href)
-
-        print(f"🏢 Found {len(urls)} company links on {url}")
-        return list(urls)
+                company_urls.add(href)
+        return list(company_urls)
 
     def scrape_company(self, page, url):
-        raw_html = self.fetch_with_retries(page, url)
-        text = page.locator("body").inner_text(timeout=2000)[:3000] if raw_html else ""
-        title = page.title() if raw_html else ""
-        return {
-            "company_url": url,
-            "title": title,
-            "text": text,
-            "raw_html": raw_html[:5000]
-        }
+        try:
+            page.goto(url, timeout=10000)
+            page.wait_for_timeout(3000)
+            title = page.title()
+            content = page.inner_text("body")
+            raw_html = page.content()
+            return {"title": title, "text": content, "raw_html": raw_html}
+        except Exception as e:
+            print(f"[ERROR] Could not scrape company page: {url} — {e}")
+            return {"title": None, "text": None, "raw_html": None}
 
-    def save_jsonl(self, filename, records):
-        path = os.path.join(self.output_dir, filename)
-        with open(path, "w", encoding="utf-8") as f:
-            for r in records:
-                f.write(json.dumps(r) + "\n")
+    def save_jsonl(self, filename, data):
+        filepath = os.path.join(self.output_dir, filename)
+        with open(filepath, "w", encoding="utf-8") as f:
+            for item in data:
+                f.write(json.dumps(item) + "\n")
 
     def run(self):
         all_data = []
+
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            page = browser.new_page()
 
             for vc_url in self.vc_urls:
-                domain = urlparse(vc_url).netloc.replace(".", "_")
-                vc_home_html = self.fetch_with_retries(page, vc_url)
-                if not vc_home_html:
-                    continue
-
-                all_data.append({
-                    "source": vc_url,
-                    "type": "vc_thesis",
-                    "content": vc_home_html
-                })
-
                 portfolio_pages = self.discover_portfolio_links(page, vc_url)
+
                 for portfolio_url in portfolio_pages:
-                    company_urls = self.extract_company_links(page, portfolio_url)
+                    print(f"📥 Visiting portfolio page: {portfolio_url}")
+                    html = self.fetch_with_retries(page, portfolio_url)
+                    if not html.strip():
+                        print(f"[WARN] Skipping {portfolio_url} due to empty content.")
+                        continue
+
+                    try:
+                        page.set_content(html)
+                    except Exception as e:
+                        print(f"[ERROR] Failed to set content for {portfolio_url}: {e}")
+                        continue
+
+                    company_urls = self.extract_company_links(page)
                     if not company_urls:
                         continue
 

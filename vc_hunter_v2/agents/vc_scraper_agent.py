@@ -25,8 +25,11 @@ class VCScraperAgent:
                 page.goto(self.base_url, timeout=30000)
                 self._scroll_to_bottom(page)
                 if self.strategy == "tile":
-                    tiles = self._extract_and_scrape_modal_tiles(page)
-                    scraped, errors = tiles, []
+                    tiles = self._extract_modal_tiles_with_retry(page)
+                    logging.info(f"🔗 Discovered {len(tiles)} portfolio tiles on {self.base_url}")
+                    scraped = self._scrape_modal_tiles(page, tiles)
+                    errors = [r for r in scraped if 'error' in r]
+                    scraped = [r for r in scraped if 'error' not in r]
                 else:
                     self._wait_for_tiles(page)
                     tiles = self._extract_portfolio_tiles(page)
@@ -40,19 +43,16 @@ class VCScraperAgent:
 
     def _scroll_to_bottom(self, page):
         logging.info("📜 Scrolling until no new content appears...")
-        last_height = 0
+        last_tile_count = 0
         for _ in range(self.max_scrolls):
-            page.mouse.wheel(0, 5000)
-            time.sleep(2)
-            new_height = page.evaluate("() => document.body.scrollHeight")
-            if new_height == last_height:
-                page.mouse.wheel(0, 5000)
-                time.sleep(2)
-                new_height = page.evaluate("() => document.body.scrollHeight")
-                if new_height == last_height:
-                    logging.info("✅ Reached end of content.")
-                    break
-            last_height = new_height
+            page.mouse.wheel(0, 3000)
+            time.sleep(3)
+            tiles = page.query_selector_all("div[data-testid^='company-tile']")
+            current_count = len(tiles)
+            if current_count == last_tile_count:
+                logging.info("✅ Reached end of content.")
+                break
+            last_tile_count = current_count
 
     def _wait_for_tiles(self, page):
         try:
@@ -75,9 +75,19 @@ class VCScraperAgent:
             logging.error(f"❌ Error extracting portfolio tiles: {e}")
             return []
 
-    def _extract_and_scrape_modal_tiles(self, page):
+    def _extract_modal_tiles_with_retry(self, page):
+        attempts = 3
+        for i in range(attempts):
+            tiles = page.query_selector_all("div[data-testid^='company-tile']")
+            if len(tiles) > 10:
+                return tiles
+            logging.info(f"⏳ Retry scroll for modal tiles, attempt {i+1}/{attempts}...")
+            page.mouse.wheel(0, 3000)
+            time.sleep(3)
+        return tiles
+
+    def _scrape_modal_tiles(self, page, tiles):
         logging.info("📥 Extracting modal-based tiles...")
-        tiles = page.query_selector_all("div[data-testid^='company-tile']")
         results = []
 
         for idx, tile in enumerate(tiles):
@@ -98,6 +108,7 @@ class VCScraperAgent:
                 page.keyboard.press("Escape")
                 time.sleep(1)
             except Exception as e:
+                results.append({"tile_index": idx + 1, "error": str(e)})
                 logging.warning(f"⚠️ Failed to extract from tile {idx+1}: {e}")
         return results
 

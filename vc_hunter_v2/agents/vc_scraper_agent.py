@@ -8,10 +8,11 @@ from urllib.parse import urljoin
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 class VCScraperAgent:
-    def __init__(self, base_url, output_dir="vc_hunter_v2/data/raw/vcs", max_scrolls=100):
+    def __init__(self, base_url, output_dir="vc_hunter_v2/data/raw/vcs", max_scrolls=100, strategy="link"):
         self.base_url = base_url
         self.output_dir = output_dir
         self.max_scrolls = max_scrolls
+        self.strategy = strategy  # 'link' or 'tile'
         os.makedirs(self.output_dir, exist_ok=True)
 
     def run(self):
@@ -23,10 +24,14 @@ class VCScraperAgent:
             try:
                 page.goto(self.base_url, timeout=30000)
                 self._scroll_to_bottom(page)
-                self._wait_for_tiles(page)
-                tiles = self._extract_portfolio_tiles(page)
-                logging.info(f"🔗 Discovered {len(tiles)} portfolio tiles on {self.base_url}")
-                scraped, errors = self._scrape_tiles(context, tiles)
+                if self.strategy == "tile":
+                    tiles = self._extract_and_scrape_modal_tiles(page)
+                    scraped, errors = tiles, []
+                else:
+                    self._wait_for_tiles(page)
+                    tiles = self._extract_portfolio_tiles(page)
+                    logging.info(f"🔗 Discovered {len(tiles)} portfolio tiles on {self.base_url}")
+                    scraped, errors = self._scrape_tiles(context, tiles)
                 self._save_results(scraped, errors)
             except PlaywrightTimeout:
                 logging.error(f"❌ Timeout while visiting {self.base_url}")
@@ -69,6 +74,32 @@ class VCScraperAgent:
         except Exception as e:
             logging.error(f"❌ Error extracting portfolio tiles: {e}")
             return []
+
+    def _extract_and_scrape_modal_tiles(self, page):
+        logging.info("📥 Extracting modal-based tiles...")
+        tiles = page.query_selector_all("div[data-testid^='company-tile']")
+        results = []
+
+        for idx, tile in enumerate(tiles):
+            try:
+                tile.scroll_into_view_if_needed()
+                tile.click()
+                page.wait_for_selector("div[class*='modal'], div[class*='company-details']", timeout=8000)
+                time.sleep(2)
+                content_html = page.content()
+                title = page.query_selector("h1")
+                link = next((a.get_attribute("href") for a in page.query_selector_all("a") if a.get_attribute("href") and not a.get_attribute("href").startswith(self.base_url)), None)
+                results.append({
+                    "company_name": title.inner_text().strip() if title else f"Tile {idx+1}",
+                    "html": content_html,
+                    "external_url": link,
+                    "source": self.base_url
+                })
+                page.keyboard.press("Escape")
+                time.sleep(1)
+            except Exception as e:
+                logging.warning(f"⚠️ Failed to extract from tile {idx+1}: {e}")
+        return results
 
     def _scrape_tiles(self, context, links):
         scraped = []

@@ -1,134 +1,103 @@
-# vc_scraper_agent.py
 import os
 import json
-import time
 import random
-from urllib.parse import urlparse, urljoin
-
+import time
+from pathlib import Path
+from typing import List, Dict, Optional
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 
 class VCScraperAgent:
-    def __init__(self, vc_urls, output_dir="vc-hunter-v2/data/raw/vcs", sample_size=20):
+    def __init__(self, vc_urls: List[str], output_dir: str = "data", sample_size: int = 25):
         self.vc_urls = vc_urls
         self.output_dir = output_dir
         self.sample_size = sample_size
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def is_valid_link(self, href):
-        return (
-            href
-            and href.startswith("http")
-            and "linkedin" not in href
-            and "twitter" not in href
-            and "mailto:" not in href
-            and "javascript:" not in href
-        )
-
-    def discover_portfolio_links(self, page, homepage_url):
-        print(f"🔍 Visiting {homepage_url}")
-        try:
-            page.goto(homepage_url, timeout=15000, wait_until="load")
-            page.wait_for_timeout(3000)
-            links = page.locator("a")
-            urls = set()
-
-            count = links.count()
-            for i in range(min(count, 500)):  # limit to reduce long loops
-                href = links.nth(i).get_attribute("href")
-                text = links.nth(i).inner_text().lower() if links.nth(i) else ""
-                if href and any(k in href.lower() or k in text for k in ["portfolio", "companies", "investments"]):
-                    full_url = urljoin(homepage_url, href)
-                    urls.add(full_url)
-
-            print(f"🔗 Discovered {len(urls)} portfolio links on {homepage_url}")
-            return list(urls)
-
-        except Exception as e:
-            print(f"[ERROR] Failed to discover portfolio links on {homepage_url} — {e}")
-            return []
-
-    def scrape_company(self, context, company_url):
-        print(f"📥 Visiting portfolio page: {company_url}")
-        try:
-            page = context.new_page()
-            page.goto(company_url, timeout=15000, wait_until="load")
-            page.wait_for_timeout(3000)
-
-            text = page.text_content("body") or ""
-            title = page.title()
-            raw_html = page.content()
-
-            page.close()
-            return {"text": text.strip(), "title": title.strip(), "raw_html": raw_html}
-
-        except Exception as e:
-            print(f"[ERROR] Could not scrape company page: {company_url} — {e}")
-            return {"text": "", "title": "", "raw_html": ""}
-
-    def save_jsonl(self, filename, data):
-        path = os.path.join(self.output_dir, filename)
-        with open(path, "w", encoding="utf-8") as f:
-            for entry in data:
-                json.dump(entry, f)
-                f.write("\n")
-
     def run(self):
         all_data = []
-
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
 
             for vc_url in self.vc_urls:
-                page = context.new_page()
-                portfolio_links = self.discover_portfolio_links(page, vc_url)
-                page.close()
-
-                for link in portfolio_links:
+                print(f"🔍 Visiting {vc_url}")
+                try:
                     page = context.new_page()
-                    try:
-                        page.goto(link, timeout=15000, wait_until="load")
-                        page.wait_for_timeout(3000)
-                        company_links = set()
+                    page.goto(vc_url, timeout=10000)
+                    links = page.query_selector_all("a")
+                    hrefs = [link.get_attribute("href") for link in links if link.get_attribute("href")]
+                    portfolio_links = [href for href in hrefs if self.is_portfolio_link(href)]
 
-                        anchors = page.locator("a")
-                        count = anchors.count()
+                    print(f"🔗 Discovered {len(portfolio_links)} portfolio links on {vc_url}")
+                    seen = set()
+                    sampled_links = []
 
-                        for i in range(min(count, 500)):
-                            href = anchors.nth(i).get_attribute("href")
-                            if self.is_valid_link(href):
-                                full_url = urljoin(link, href)
-                                company_links.add(full_url)
+                    if len(portfolio_links) == 0:
+                        continue
 
-                        company_links = list(company_links)
-                        sample = (
-                            company_links
-                            if len(company_links) <= 50
-                            else random.sample(company_links, max(self.sample_size, int(0.2 * len(company_links))))
-                        )
+                    # Shuffle links for randomness
+                    random.shuffle(portfolio_links)
 
-                        for company_url in sample:
+                    for company_url in portfolio_links:
+                        if company_url in seen:
+                            continue
+                        seen.add(company_url)
+
+                        print(f"📥 Visiting portfolio page: {company_url}")
+                        try:
                             result = self.scrape_company(context, company_url)
-                            if not result["text"]:
+                            if result["text"].strip():
+                                all_data.append({
+                                    "source": vc_url,
+                                    "type": "portfolio_shallow",
+                                    "company_url": company_url,
+                                    "content": result["text"],
+                                    "title": result["title"],
+                                    "raw_html": result["raw_html"],
+                                })
+                            else:
                                 print(f"[WARN] Skipping {company_url} due to empty content.")
-                                continue
+                        except Exception as e:
+                            print(f"[ERROR] Could not scrape company page: {company_url} — {e}")
 
-                            all_data.append({
-                                "source": vc_url,
-                                "type": "portfolio_shallow",
-                                "company_url": company_url,
-                                "content": result["text"],
-                                "title": result["title"],
-                                "raw_html": result["raw_html"],
-                            })
+                    page.close()
+                except Exception as e:
+                    print(f"[ERROR] Failed visiting {vc_url} — {e}")
 
-                    except Exception as e:
-                        print(f"[ERROR] Failed to extract companies from {link} — {e}")
-                    finally:
-                        page.close()
-
-            self.save_jsonl("vc_scraped_data.jsonl", all_data)
+            context.close()
             browser.close()
 
+        self.save_jsonl("vc_scraped_data.jsonl", all_data)
         print(f"✅ Finished. Saved {len(all_data)} records to {self.output_dir}/vc_scraped_data.jsonl")
+
+    def scrape_company(self, context, url: str) -> Dict[str, Optional[str]]:
+        page = context.new_page()
+        try:
+            page.goto(url, timeout=10000)
+            title = page.title()
+            raw_html = page.content()
+            text_content = page.inner_text("body")
+            return {
+                "title": title,
+                "raw_html": raw_html,
+                "text": text_content,
+            }
+        except PWTimeout:
+            raise Exception(f"Timeout while visiting {url}")
+        finally:
+            page.close()
+
+    def is_portfolio_link(self, href: str) -> bool:
+        if not href.startswith("http"):
+            return False
+        blacklist = ["linkedin.com", "twitter.com", "facebook.com", "instagram.com"]
+        if any(bad in href for bad in blacklist):
+            return False
+        return True
+
+    def save_jsonl(self, filename: str, data: List[Dict]):
+        path = Path(self.output_dir) / filename
+        with open(path, "w", encoding="utf-8") as f:
+            for entry in data:
+                f.write(json.dumps(entry) + "\n")

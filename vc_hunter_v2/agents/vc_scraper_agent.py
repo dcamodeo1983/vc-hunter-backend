@@ -25,12 +25,10 @@ class VCScraperAgent:
             try:
                 page.goto(self.base_url, timeout=15000)
                 self._scroll_to_bottom(page)
-                raw_links = page.query_selector_all("a")
-                all_links = [link.get_attribute("href") for link in raw_links if link.get_attribute("href")]
-                portfolio_links = self._filter_valid_links(all_links)
-                logging.info(f"🔗 Discovered {len(portfolio_links)} potential portfolio links on {self.base_url}")
-                results, errors = self._sample_until_converged(page, portfolio_links)
-                self._save_results(results, errors, len(portfolio_links))
+                tiles = page.query_selector_all("[data-testid='portfolio-tile']") or page.query_selector_all(".portfolio-tile")
+                logging.info(f"🔗 Discovered {len(tiles)} portfolio tiles on {self.base_url}")
+                results, errors = self._sample_tiles_until_converged(page, tiles)
+                self._save_results(results, errors, len(tiles))
             except PlaywrightTimeout:
                 logging.error(f"❌ Timeout while visiting {self.base_url}")
             finally:
@@ -42,70 +40,57 @@ class VCScraperAgent:
         for _ in range(self.max_scrolls):
             page.mouse.wheel(0, 5000)
             time.sleep(2)
-            anchors = page.query_selector_all("a")
-            current_count = len(anchors)
+            tiles = page.query_selector_all("[data-testid='portfolio-tile']") or page.query_selector_all(".portfolio-tile")
+            current_count = len(tiles)
             if current_count == last_count:
                 logging.info("✅ Reached end of content.")
                 break
             last_count = current_count
 
-    def _filter_valid_links(self, links):
-        seen = set()
-        filtered = []
-        for link in links:
-            full_url = urljoin(self.base_url, link)
-            if any(social in full_url for social in ["linkedin.com", "twitter.com", "facebook.com"]):
-                continue
-            if full_url not in seen:
-                seen.add(full_url)
-                filtered.append(full_url)
-        return filtered
-
-    def _scrape_company_page(self, page, url):
+    def _scrape_tile_modal(self, page, tile):
         try:
-            logging.info(f"📥 Visiting portfolio page: {url}")
-            page.goto(url, timeout=10000)
-            time.sleep(2)
+            tile.scroll_into_view_if_needed()
+            tile.click()
+            page.wait_for_selector(".portfolio-detail, .modal-content", timeout=5000)
+            time.sleep(1)
             raw_html = page.content()
+            ext_links = [a.get_attribute("href") for a in page.query_selector_all("a[href^='http']") if a.get_attribute("href") and "8vc.com" not in a.get_attribute("href")]
+            ext_link = ext_links[0] if ext_links else None
             if not raw_html.strip():
-                logging.warning(f"[WARN] Skipped {url} due to empty content or error.")
-                return None, {"url": url, "error": "Empty content"}
-            return {"url": url, "html": raw_html}, None
+                return None, {"tile_index": str(tile), "error": "Empty modal content"}
+            return {"html": raw_html, "external_url": ext_link, "source": self.base_url}, None
         except PlaywrightTimeout:
-            logging.error(f"[ERROR] Timeout while visiting {url}")
-            return None, {"url": url, "error": "Timeout"}
+            return None, {"tile_index": str(tile), "error": "Timeout"}
         except Exception as e:
-            logging.error(f"[ERROR] Failed to scrape {url}: {e}")
-            return None, {"url": url, "error": str(e)}
+            return None, {"tile_index": str(tile), "error": str(e)}
+        finally:
+            page.keyboard.press("Escape")
+            time.sleep(0.5)
 
-    def _sample_until_converged(self, page, portfolio_links):
+    def _sample_tiles_until_converged(self, page, tiles):
         scraped = []
         errors = []
         attempted = set()
-        successful = set()
         info_chars = 0
         no_info_gain_count = 0
-        min_sample_size = max(1, int(len(portfolio_links) * self.min_sample_ratio))
+        min_sample_size = max(1, int(len(tiles) * self.min_sample_ratio))
 
-        while len(successful) < min_sample_size and len(attempted) < len(portfolio_links):
-            remaining = list(set(portfolio_links) - attempted)
-            if not remaining:
-                break
-            link = random.choice(remaining)
-            attempted.add(link)
-            result, error = self._scrape_company_page(page, link)
+        while len(scraped) < min_sample_size and len(attempted) < len(tiles):
+            idx = random.choice([i for i in range(len(tiles)) if i not in attempted])
+            attempted.add(idx)
+            tile = tiles[idx]
+            result, error = self._scrape_tile_modal(page, tile)
             if result:
                 added_chars = len(result["html"])
-                if added_chars > 500 and result["url"] not in successful:
+                if added_chars > 500:
                     scraped.append(result)
-                    successful.add(result["url"])
                     if added_chars > info_chars:
                         info_chars = added_chars
                         no_info_gain_count = 0
                     else:
                         no_info_gain_count += 1
                 else:
-                    logging.info(f"[INFO] Skipped {link} due to low info gain or duplication.")
+                    logging.info(f"[INFO] Skipped tile {idx} due to low info gain.")
             if error:
                 errors.append(error)
             if no_info_gain_count >= 5:
@@ -124,7 +109,7 @@ class VCScraperAgent:
             json.dump(errors, f, indent=2)
         summary = {
             "base_url": self.base_url,
-            "total_links_discovered": total_discovered,
+            "total_tiles_discovered": total_discovered,
             "unique_successful_scrapes": len(scraped),
             "failures": len(errors),
             "min_sample_required": max(1, int(total_discovered * self.min_sample_ratio)),

@@ -25,7 +25,7 @@ class VCScraperAgent:
                 page.goto(self.base_url, timeout=30000)
                 self._scroll_to_bottom(page)
                 if self.strategy == "tile":
-                    tiles = self._extract_modal_tiles_with_retry(page)
+                    tiles = self._scroll_and_extract_modal_tiles(page)
                     logging.info(f"🔗 Discovered {len(tiles)} portfolio tiles on {self.base_url}")
                     scraped = self._scrape_modal_tiles(page, tiles)
                     errors = [r for r in scraped if 'error' in r]
@@ -43,16 +43,15 @@ class VCScraperAgent:
 
     def _scroll_to_bottom(self, page):
         logging.info("📜 Scrolling until no new content appears...")
-        last_tile_count = 0
+        last_height = 0
         for _ in range(self.max_scrolls):
-            page.mouse.wheel(0, 3000)
-            time.sleep(3)
-            tiles = page.query_selector_all("div[data-testid^='company-tile']")
-            current_count = len(tiles)
-            if current_count == last_tile_count:
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            time.sleep(2.5)
+            new_height = page.evaluate("document.body.scrollHeight")
+            if new_height == last_height:
                 logging.info("✅ Reached end of content.")
                 break
-            last_tile_count = current_count
+            last_height = new_height
 
     def _wait_for_tiles(self, page):
         try:
@@ -75,26 +74,36 @@ class VCScraperAgent:
             logging.error(f"❌ Error extracting portfolio tiles: {e}")
             return []
 
-    def _extract_modal_tiles_with_retry(self, page):
-        attempts = 3
-        for i in range(attempts):
+    def _scroll_and_extract_modal_tiles(self, page):
+        logging.info("📥 Extracting modal-based tiles...")
+        seen = set()
+        stable_scrolls = 0
+
+        for i in range(self.max_scrolls):
             tiles = page.query_selector_all("div[data-testid^='company-tile']")
-            if len(tiles) > 10:
-                return tiles
-            logging.info(f"⏳ Retry scroll for modal tiles, attempt {i+1}/{attempts}...")
-            page.mouse.wheel(0, 3000)
-            time.sleep(3)
-        return tiles
+            new_tiles = [tile for tile in tiles if tile not in seen]
+            if not new_tiles:
+                stable_scrolls += 1
+            else:
+                seen.update(new_tiles)
+                stable_scrolls = 0
+
+            if stable_scrolls >= 3:
+                break
+
+            page.evaluate("window.scrollBy(0, window.innerHeight)")
+            time.sleep(1.5)
+
+        return list(seen)
 
     def _scrape_modal_tiles(self, page, tiles):
-        logging.info("📥 Extracting modal-based tiles...")
         results = []
 
         for idx, tile in enumerate(tiles):
             try:
                 tile.scroll_into_view_if_needed()
                 tile.click()
-                page.wait_for_selector("div[class*='modal'], div[class*='company-details']", timeout=8000)
+                page.wait_for_selector("div[class*='modal'], div[class*='company-details']", timeout=10000)
                 time.sleep(2)
                 content_html = page.content()
                 title = page.query_selector("h1")

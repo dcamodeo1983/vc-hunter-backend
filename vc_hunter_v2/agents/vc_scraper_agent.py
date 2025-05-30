@@ -9,10 +9,11 @@ from urllib.parse import urljoin, urlparse
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 class VCScraperAgent:
-    def __init__(self, base_url, output_dir="vc_hunter_v2/data/raw/vcs", max_scrolls=75):
+    def __init__(self, base_url, output_dir="vc_hunter_v2/data/raw/vcs", max_scrolls=75, min_sample_ratio=0.25):
         self.base_url = base_url
         self.output_dir = output_dir
         self.max_scrolls = max_scrolls
+        self.min_sample_ratio = min_sample_ratio
         os.makedirs(self.output_dir, exist_ok=True)
 
     def run(self):
@@ -28,8 +29,8 @@ class VCScraperAgent:
                 all_links = [link.get_attribute("href") for link in raw_links if link.get_attribute("href")]
                 portfolio_links = self._filter_valid_links(all_links)
                 logging.info(f"🔗 Discovered {len(portfolio_links)} potential portfolio links on {self.base_url}")
-                results, errors = self._scrape_portfolios(page, portfolio_links)
-                self._save_results(results, errors)
+                results, errors = self._sample_until_converged(page, portfolio_links)
+                self._save_results(results, errors, len(portfolio_links))
             except PlaywrightTimeout:
                 logging.error(f"❌ Timeout while visiting {self.base_url}")
             finally:
@@ -60,28 +61,60 @@ class VCScraperAgent:
                 filtered.append(full_url)
         return filtered
 
-    def _scrape_portfolios(self, page, portfolio_links):
+    def _scrape_company_page(self, page, url):
+        try:
+            logging.info(f"📥 Visiting portfolio page: {url}")
+            page.goto(url, timeout=10000)
+            time.sleep(2)
+            raw_html = page.content()
+            if not raw_html.strip():
+                logging.warning(f"[WARN] Skipped {url} due to empty content or error.")
+                return None, {"url": url, "error": "Empty content"}
+            return {"url": url, "html": raw_html}, None
+        except PlaywrightTimeout:
+            logging.error(f"[ERROR] Timeout while visiting {url}")
+            return None, {"url": url, "error": "Timeout"}
+        except Exception as e:
+            logging.error(f"[ERROR] Failed to scrape {url}: {e}")
+            return None, {"url": url, "error": str(e)}
+
+    def _sample_until_converged(self, page, portfolio_links):
         scraped = []
         errors = []
-        for link in portfolio_links:
-            try:
-                logging.info(f"📥 Visiting portfolio page: {link}")
-                page.goto(link, timeout=10000)
-                time.sleep(2)
-                raw_html = page.content()
-                if not raw_html.strip():
-                    logging.warning(f"[WARN] Skipped {link} due to empty content or error.")
-                    continue
-                scraped.append({"url": link, "html": raw_html})
-            except PlaywrightTimeout:
-                logging.error(f"[ERROR] Timeout while visiting {link}")
-                errors.append({"url": link, "error": "Timeout"})
-            except Exception as e:
-                logging.error(f"[ERROR] Failed to scrape {link}: {e}")
-                errors.append({"url": link, "error": str(e)})
+        attempted = set()
+        successful = set()
+        info_chars = 0
+        no_info_gain_count = 0
+        min_sample_size = max(1, int(len(portfolio_links) * self.min_sample_ratio))
+
+        while len(successful) < min_sample_size and len(attempted) < len(portfolio_links):
+            remaining = list(set(portfolio_links) - attempted)
+            if not remaining:
+                break
+            link = random.choice(remaining)
+            attempted.add(link)
+            result, error = self._scrape_company_page(page, link)
+            if result:
+                added_chars = len(result["html"])
+                if added_chars > 500 and result["url"] not in successful:
+                    scraped.append(result)
+                    successful.add(result["url"])
+                    if added_chars > info_chars:
+                        info_chars = added_chars
+                        no_info_gain_count = 0
+                    else:
+                        no_info_gain_count += 1
+                else:
+                    logging.info(f"[INFO] Skipped {link} due to low info gain or duplication.")
+            if error:
+                errors.append(error)
+            if no_info_gain_count >= 5:
+                logging.info("📉 No new info gained in 5 attempts, stopping early.")
+                break
+
         return scraped, errors
 
-    def _save_results(self, scraped, errors):
+    def _save_results(self, scraped, errors, total_discovered):
         jsonl_path = os.path.join(self.output_dir, "vc_scraped_data.jsonl")
         with open(jsonl_path, "w") as f:
             for item in scraped:
@@ -91,9 +124,10 @@ class VCScraperAgent:
             json.dump(errors, f, indent=2)
         summary = {
             "base_url": self.base_url,
-            "total_links_discovered": len(scraped) + len(errors),
-            "scraped": len(scraped),
-            "errors": len(errors),
+            "total_links_discovered": total_discovered,
+            "unique_successful_scrapes": len(scraped),
+            "failures": len(errors),
+            "min_sample_required": max(1, int(total_discovered * self.min_sample_ratio)),
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S")
         }
         summary_path = os.path.join(self.output_dir, "scrape_summary.json")

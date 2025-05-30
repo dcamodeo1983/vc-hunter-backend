@@ -23,6 +23,7 @@ class VCScraperAgent:
             try:
                 page.goto(self.base_url, timeout=30000)
                 self._scroll_to_bottom(page)
+                self._wait_for_tiles(page)
                 tiles = self._extract_portfolio_tiles(page)
                 logging.info(f"🔗 Discovered {len(tiles)} portfolio tiles on {self.base_url}")
                 scraped, errors = self._scrape_tiles(context, tiles)
@@ -40,19 +41,34 @@ class VCScraperAgent:
             time.sleep(2)
             new_height = page.evaluate("() => document.body.scrollHeight")
             if new_height == last_height:
-                logging.info("✅ Reached end of content.")
-                break
+                page.mouse.wheel(0, 5000)
+                time.sleep(2)
+                new_height = page.evaluate("() => document.body.scrollHeight")
+                if new_height == last_height:
+                    logging.info("✅ Reached end of content.")
+                    break
             last_height = new_height
 
+    def _wait_for_tiles(self, page):
+        try:
+            page.wait_for_selector("a[href*='/companies/'], a[href*='/portfolio/']", timeout=10000)
+        except PlaywrightTimeout:
+            logging.warning("⚠️ Portfolio tile selector not found in time.")
+
     def _extract_portfolio_tiles(self, page):
-        tiles = page.query_selector_all("a[href*='/companies/'], a[href*='/portfolio/']")
-        results = []
-        for tile in tiles:
-            href = tile.get_attribute("href")
-            if href:
-                full_url = urljoin(self.base_url, href)
-                results.append(full_url)
-        return list(set(results))
+        try:
+            tiles = page.evaluate("""
+                () => {
+                    const anchors = Array.from(document.querySelectorAll("a"));
+                    return anchors.map(a => a.href).filter(href =>
+                        href.includes('/companies/') || href.includes('/portfolio/')
+                    );
+                }
+            """)
+            return list(set(tiles))
+        except Exception as e:
+            logging.error(f"❌ Error extracting portfolio tiles: {e}")
+            return []
 
     def _scrape_tiles(self, context, links):
         scraped = []

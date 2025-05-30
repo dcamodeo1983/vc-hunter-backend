@@ -101,7 +101,6 @@ class VCScraperAgent:
         results = []
         for idx, html in enumerate(tile_html_snapshots):
             try:
-                # Try to locate a fresh tile element matching snapshot
                 tile = page.query_selector(f"div[class*='tile']:has-text('{html[:50]}')")
                 if not tile:
                     raise Exception("Tile not found in DOM")
@@ -109,17 +108,29 @@ class VCScraperAgent:
                 tile.click(timeout=10000)
                 page.wait_for_selector("div[class*='modal'], div[class*='company-details']", timeout=10000)
                 time.sleep(2)
+
                 content_html = page.content()
-                title = page.query_selector("h1")
-                link = next((a.get_attribute("href") for a in page.query_selector_all("a") if a.get_attribute("href") and not a.get_attribute("href").startswith(self.base_url)), None)
+                title_el = page.query_selector("h1")
+                company_name = title_el.inner_text().strip() if title_el else f"Tile {idx+1}"
+
+                all_links = page.query_selector_all("a")
+                external_link = None
+                for a in all_links:
+                    href = a.get_attribute("href")
+                    if href and not href.startswith(self.base_url) and href.startswith("http"):
+                        external_link = href
+                        break
+
                 results.append({
-                    "company_name": title.inner_text().strip() if title else f"Tile {idx+1}",
+                    "company_name": company_name,
                     "html": content_html,
-                    "external_url": link,
+                    "external_url": external_link,
                     "source": self.base_url
                 })
+
                 page.keyboard.press("Escape")
                 time.sleep(1)
+
             except Exception as e:
                 results.append({"tile_index": idx + 1, "error": str(e)})
                 logging.warning(f"⚠️ Failed to extract from tile {idx+1}: {e}")

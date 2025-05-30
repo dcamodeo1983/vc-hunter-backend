@@ -25,10 +25,10 @@ class VCScraperAgent:
             try:
                 page.goto(self.base_url, timeout=30000)
                 self._scroll_to_bottom(page)
-                tiles = self._find_tiles(page)
-                logging.info(f"🔗 Discovered {len(tiles)} portfolio tiles on {self.base_url}")
-                results, errors = self._sample_tiles_until_converged(page, tiles)
-                self._save_results(results, errors, len(tiles))
+                tile_links = self._find_portfolio_links(page)
+                logging.info(f"🔗 Discovered {len(tile_links)} portfolio tiles on {self.base_url}")
+                results, errors = self._sample_links_until_converged(context, tile_links)
+                self._save_results(results, errors, len(tile_links))
             except PlaywrightTimeout:
                 logging.error(f"❌ Timeout while visiting {self.base_url}")
             finally:
@@ -36,64 +36,61 @@ class VCScraperAgent:
 
     def _scroll_to_bottom(self, page):
         logging.info("📜 Scrolling until no new content appears...")
-        last_count = -1
+        last_height = 0
         for _ in range(self.max_scrolls):
             page.mouse.wheel(0, 5000)
             time.sleep(2)
-            tiles = self._find_tiles(page)
-            current_count = len(tiles)
-            if current_count == last_count:
+            new_height = page.evaluate("() => document.body.scrollHeight")
+            if new_height == last_height:
                 logging.info("✅ Reached end of content.")
                 break
-            last_count = current_count
+            last_height = new_height
 
-    def _find_tiles(self, page):
-        selectors = ["[data-testid='portfolio-tile']", ".portfolio-tile", "div[data-portfolio-entry]", "div.card"]
-        for selector in selectors:
-            tiles = page.query_selector_all(selector)
-            if tiles:
-                return tiles
-        return []
+    def _find_portfolio_links(self, page):
+        selector = "a[href^='/companies/']"
+        anchors = page.query_selector_all(selector)
+        unique_links = set()
+        for a in anchors:
+            href = a.get_attribute("href")
+            if href:
+                full_url = urljoin(self.base_url, href)
+                unique_links.add(full_url)
+        return list(unique_links)
 
-    def _scrape_tile_modal(self, page, tile):
+    def _scrape_tile_linked_page(self, context, url):
+        page = context.new_page()
         try:
-            tile.scroll_into_view_if_needed()
-            tile.click()
-            page.wait_for_selector(".portfolio-detail, .modal-content", timeout=7000)
-            time.sleep(1)
+            page.goto(url, timeout=15000)
+            time.sleep(1.5)
             raw_html = page.content()
             ext_links = [a.get_attribute("href") for a in page.query_selector_all("a[href^='http']") if a.get_attribute("href") and self.base_url not in a.get_attribute("href")]
             ext_link = ext_links[0] if ext_links else None
             if not raw_html.strip():
-                return None, {"tile_index": str(tile), "error": "Empty modal content"}
-            return {"html": raw_html, "external_url": ext_link, "source": self.base_url}, None
+                return None, {"url": url, "error": "Empty page content"}
+            return {"html": raw_html, "external_url": ext_link, "source": url}, None
         except PlaywrightTimeout:
-            return None, {"tile_index": str(tile), "error": "Timeout"}
+            return None, {"url": url, "error": "Timeout"}
         except Exception as e:
-            return None, {"tile_index": str(tile), "error": str(e)}
+            return None, {"url": url, "error": str(e)}
         finally:
-            try:
-                page.keyboard.press("Escape")
-                time.sleep(0.5)
-            except:
-                pass
+            page.close()
 
-    def _sample_tiles_until_converged(self, page, tiles):
+    def _sample_links_until_converged(self, context, links):
         scraped = []
         errors = []
         attempted = set()
         info_chars = 0
         no_info_gain_count = 0
-        min_sample_size = max(1, int(len(tiles) * self.min_sample_ratio))
+        min_sample_size = max(1, int(len(links) * self.min_sample_ratio))
 
-        while len(scraped) < min_sample_size and len(attempted) < len(tiles):
-            candidates = [i for i in range(len(tiles)) if i not in attempted]
+        while len(scraped) < min_sample_size and len(attempted) < len(links):
+            candidates = [i for i in range(len(links)) if i not in attempted]
             if not candidates:
                 break
             idx = random.choice(candidates)
             attempted.add(idx)
-            tile = tiles[idx]
-            result, error = self._scrape_tile_modal(page, tile)
+            url = links[idx]
+            result, error = self._scrape_tile_linked_page(context, url)
             if result:
                 added_chars = len(result["html"])
                 if added_chars > 500:
@@ -104,7 +101,7 @@ class VCScraperAgent:
                     else:
                         no_info_gain_count += 1
                 else:
-                    logging.info(f"[INFO] Skipped tile {idx} due to low info gain.")
+                    logging.info(f"[INFO] Skipped {url} due to low info gain.")
             if error:
                 errors.append(error)
             if no_info_gain_count >= 5:

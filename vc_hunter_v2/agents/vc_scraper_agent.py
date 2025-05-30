@@ -46,7 +46,7 @@ class VCScraperAgent:
                 browser.close()
 
     def _scroll_to_bottom(self, page):
-        logging.info("📜 Scrolling until no new content appears...")
+        logging.info("🖜 Scrolling until no new content appears...")
         last_height = 0
         for _ in range(self.max_scrolls):
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
@@ -79,11 +79,11 @@ class VCScraperAgent:
             return []
 
     def _scroll_and_extract_modal_tiles(self, page):
-        logging.info("📥 Extracting modal-based tiles...")
+        logging.info("📅 Extracting modal-based tiles...")
         stable_scrolls = 0
         previous_count = 0
 
-        for i in range(self.max_scrolls):
+        for _ in range(self.max_scrolls):
             tiles = page.query_selector_all("div[class*='tile'], div[class*='card'], div[class*='portfolio']")
             if len(tiles) == previous_count:
                 stable_scrolls += 1
@@ -95,15 +95,14 @@ class VCScraperAgent:
             page.evaluate("window.scrollBy(0, window.innerHeight)")
             time.sleep(1.5)
 
-        return [tile.get_attribute("outerHTML") for tile in tiles]
+        return tiles
 
-    def _scrape_modal_tiles(self, page, tile_html_snapshots):
+    def _scrape_modal_tiles(self, page, tiles):
         results = []
-        for idx, html in enumerate(tile_html_snapshots):
+        for idx, tile in enumerate(tiles):
             try:
-                tile = page.query_selector(f"div[class*='tile']:has-text('{html[:50]}')")
                 if not tile:
-                    raise Exception("Tile not found in DOM")
+                    raise Exception("Tile handle is None")
                 tile.scroll_into_view_if_needed(timeout=5000)
                 tile.click(timeout=10000)
                 page.wait_for_selector("div[class*='modal'], div[class*='company-details']", timeout=10000)

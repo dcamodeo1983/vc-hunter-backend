@@ -1,116 +1,99 @@
-
 import os
-import time
 import json
+import time
 import random
-from pathlib import Path
+import logging
 from urllib.parse import urlparse
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from pathlib import Path
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 class VCScraperAgent:
-    def __init__(self, vc_urls, output_dir="vc-hunter-v2/data/raw/vcs", sample_size=10):
-        self.vc_urls = vc_urls
+    def __init__(self, vc_url, output_dir="vc_hunter_v2/data/raw/vcs", timeout_ms=10000):
+        self.vc_url = vc_url
         self.output_dir = output_dir
-        self.sample_size = sample_size
-        os.makedirs(output_dir, exist_ok=True)
+        self.timeout_ms = timeout_ms
+        Path(self.output_dir).mkdir(parents=True, exist_ok=True)
+        self.scrape_errors = []
 
-    def extract_links(self, page):
-        page.wait_for_timeout(3000)
-        for _ in range(8):  # simulate scrolling to load JS content
-            page.mouse.wheel(0, 1000)
-            page.wait_for_timeout(1000)
+    def is_valid_company_link(self, href):
+        if not href:
+            return False
+        parsed = urlparse(href)
+        domain = parsed.netloc.lower()
+        # Exclude known non-company patterns
+        return not any(
+            blocked in domain
+            for blocked in ["linkedin.com", "twitter.com", "facebook.com", "youtube.com", "instagram.com"]
+        )
+
+    def save_jsonl(self, filename, data):
+        path = Path(self.output_dir) / filename
+        with path.open("w", encoding="utf-8") as f:
+            for record in data:
+                f.write(json.dumps(record) + "\n")
+
+    def save_errors(self):
+        if self.scrape_errors:
+            self.save_jsonl("scrape_errors.json", self.scrape_errors)
+
+    def extract_company_links(self, page):
         anchors = page.query_selector_all("a")
-        hrefs = set()
-        for anchor in anchors:
-            href = anchor.get_attribute("href")
-            if href and href.startswith("http"):
-                hrefs.add(href)
-        return list(hrefs)
+        links = [a.get_attribute("href") for a in anchors]
+        valid_links = [link for link in links if self.is_valid_company_link(link)]
+        return list(set(valid_links))
 
-    def scrape_company(self, page, url):
-        for attempt in range(2):
-            try:
-                page.goto(url, timeout=20000)
-                page.wait_for_timeout(2000)
-                title = page.title()
-                html = page.content()
-                text = page.inner_text("body")
-                if not text.strip():
-                    raise ValueError("Empty body text")
-                return {"title": title, "raw_html": html, "text": text}
-            except Exception as e:
-                if attempt == 1:
-                    raise e
-                page.wait_for_timeout(2000)
+    def scrape_company_page(self, page, url):
+        try:
+            page.goto(url, timeout=self.timeout_ms)
+            page.wait_for_load_state("domcontentloaded", timeout=self.timeout_ms)
+            text = page.text_content("body")
+            title = page.title()
+            html = page.content()
+            return {"url": url, "title": title, "text": text, "html": html}
+        except PlaywrightTimeout:
+            self.scrape_errors.append({"url": url, "error": "Timeout"})
+            return None
+        except Exception as e:
+            self.scrape_errors.append({"url": url, "error": str(e)})
+            return None
 
     def run(self):
-        successes = []
-        failures = []
+        all_data = []
+        print(f"🔍 Visiting {self.vc_url}")
 
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
             page = context.new_page()
 
-            for vc_url in self.vc_urls:
-                print(f"🔍 Visiting {vc_url}")
-                try:
-                    page.goto(vc_url, timeout=20000)
-                except PlaywrightTimeoutError:
-                    print(f"[ERROR] Timeout while visiting {vc_url}")
-                    continue
+            try:
+                page.goto(self.vc_url, timeout=self.timeout_ms)
+                page.wait_for_load_state("domcontentloaded", timeout=self.timeout_ms)
+                links = self.extract_company_links(page)
+                print(f"🔗 Discovered {len(links)} potential portfolio links on {self.vc_url}")
 
-                all_links = self.extract_links(page)
-                print(f"🔗 Discovered {len(all_links)} portfolio links on {vc_url}")
-
-                portfolio_links = [
-                    link for link in all_links
-                    if not any(domain in link for domain in ["linkedin", "twitter", "termly", "login", "auth", "x.com"])
-                ]
-
-                sample = (
-                    portfolio_links
-                    if len(portfolio_links) <= 100
-                    else random.sample(portfolio_links, min(self.sample_size, len(portfolio_links)))
-                )
-
-                for link in sample:
+                for link in links:
                     print(f"📥 Visiting portfolio page: {link}")
-                    try:
-                        result = self.scrape_company(page, link)
-                        successes.append({
-                            "source": vc_url,
-                            "type": "portfolio_shallow",
-                            "company_url": link,
-                            "content": result.get("text"),
-                            "title": result.get("title"),
-                            "raw_html": result.get("raw_html"),
+                    result = self.scrape_company_page(page, link)
+                    if result and result.get("text"):
+                        all_data.append({
+                            "vc": self.vc_url,
+                            "company_url": result["url"],
+                            "title": result["title"],
+                            "content": result["text"],
+                            "raw_html": result["html"],
                         })
-                    except Exception as e:
-                        print(f"[ERROR] Could not scrape company page: {link} — {e}")
-                        failures.append({"url": link, "error": str(e)})
+                    else:
+                        print(f"[WARN] Skipped {link} due to empty content or error.")
+
+            except Exception as e:
+                print(f"[FATAL] Failed to open {self.vc_url}: {e}")
 
             browser.close()
 
-        jsonl_path = os.path.join(self.output_dir, "vc_scraped_data.jsonl")
-        with open(jsonl_path, "w") as f:
-            for entry in successes:
-                f.write(json.dumps(entry) + "\n")
+        self.save_jsonl("vc_scraped_data.jsonl", all_data)
+        self.save_errors()
 
-        error_path = os.path.join(self.output_dir, "scrape_errors.json")
-        with open(error_path, "w") as f:
-            json.dump(failures, f, indent=2)
-
-        summary_path = os.path.join(self.output_dir, "scrape_summary.txt")
-        with open(summary_path, "w") as f:
-            f.write(f"✅ Scraped {len(successes)} records from {self.vc_urls[0]}\n")
-            f.write(f"❌ Failed: {len(failures)} records\n")
-            if failures:
-                f.write("❌ Failures by URL:\n")
-                for fail in failures:
-                    f.write(f"- {fail['url']}: {fail['error']}\n")
-
-        print(f"✅ Finished. Saved {len(successes)} records to {jsonl_path}")
-        if failures:
-            print(f"⚠️  {len(failures)} errors saved to {error_path}")
-            print(f"📄 Summary written to {summary_path}")
+        print(f"✅ Scraped {len(all_data)} records from {self.vc_url}")
+        if self.scrape_errors:
+            print(f"⚠️  {len(self.scrape_errors)} errors saved to scrape_errors.json")

@@ -27,6 +27,8 @@ class VCScraperAgent:
                 if self.strategy == "tile":
                     tiles = self._scroll_and_extract_modal_tiles(page)
                     logging.info(f"🔗 Discovered {len(tiles)} portfolio tiles on {self.base_url}")
+                    if not tiles:
+                        self._dump_html(page, "modal_tile_debug.html")
                     scraped = self._scrape_modal_tiles(page, tiles)
                     errors = [r for r in scraped if 'error' in r]
                     scraped = [r for r in scraped if 'error' not in r]
@@ -34,6 +36,8 @@ class VCScraperAgent:
                     self._wait_for_tiles(page)
                     tiles = self._extract_portfolio_tiles(page)
                     logging.info(f"🔗 Discovered {len(tiles)} portfolio tiles on {self.base_url}")
+                    if not tiles:
+                        self._dump_html(page, "link_tile_debug.html")
                     scraped, errors = self._scrape_tiles(context, tiles)
                 self._save_results(scraped, errors)
             except PlaywrightTimeout:
@@ -80,7 +84,7 @@ class VCScraperAgent:
         stable_scrolls = 0
 
         for i in range(self.max_scrolls):
-            tiles = page.query_selector_all("div[data-testid^='company-tile']")
+            tiles = page.query_selector_all("div[class*='tile'], div[class*='card'], div[class*='portfolio']")
             new_tiles = [tile for tile in tiles if tile not in seen]
             if not new_tiles:
                 stable_scrolls += 1
@@ -179,3 +183,9 @@ class VCScraperAgent:
 
         logging.info(f"✅ Scraped {len(scraped)} records from {self.base_url}")
         logging.info(f"⚠️  {len(errors)} errors saved to {error_path}")
+
+    def _dump_html(self, page, filename):
+        html = page.content()
+        with open(os.path.join(self.output_dir, filename), "w", encoding="utf-8") as f:
+            f.write(html)
+        logging.info(f"🧪 Dumped HTML for inspection: {filename}")

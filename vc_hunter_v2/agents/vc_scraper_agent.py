@@ -80,33 +80,33 @@ class VCScraperAgent:
 
     def _scroll_and_extract_modal_tiles(self, page):
         logging.info("📥 Extracting modal-based tiles...")
-        seen = set()
         stable_scrolls = 0
+        previous_count = 0
 
         for i in range(self.max_scrolls):
             tiles = page.query_selector_all("div[class*='tile'], div[class*='card'], div[class*='portfolio']")
-            new_tiles = [tile for tile in tiles if tile not in seen]
-            if not new_tiles:
+            if len(tiles) == previous_count:
                 stable_scrolls += 1
             else:
-                seen.update(new_tiles)
                 stable_scrolls = 0
-
             if stable_scrolls >= 3:
                 break
-
+            previous_count = len(tiles)
             page.evaluate("window.scrollBy(0, window.innerHeight)")
             time.sleep(1.5)
 
-        return list(seen)
+        return [tile.get_attribute("outerHTML") for tile in tiles]
 
-    def _scrape_modal_tiles(self, page, tiles):
+    def _scrape_modal_tiles(self, page, tile_html_snapshots):
         results = []
-
-        for idx, tile in enumerate(tiles):
+        for idx, html in enumerate(tile_html_snapshots):
             try:
-                tile.scroll_into_view_if_needed()
-                tile.click()
+                # Try to locate a fresh tile element matching snapshot
+                tile = page.query_selector(f"div[class*='tile']:has-text('{html[:50]}')")
+                if not tile:
+                    raise Exception("Tile not found in DOM")
+                tile.scroll_into_view_if_needed(timeout=5000)
+                tile.click(timeout=10000)
                 page.wait_for_selector("div[class*='modal'], div[class*='company-details']", timeout=10000)
                 time.sleep(2)
                 content_html = page.content()

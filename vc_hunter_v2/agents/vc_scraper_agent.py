@@ -1,106 +1,116 @@
+
 import os
-import json
 import time
+import json
 import random
+from pathlib import Path
+from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 class VCScraperAgent:
-    def __init__(self, output_dir, sample_size=10, timeout_ms=10000, max_retries=2, wait_after_navigation=1000):
+    def __init__(self, vc_urls, output_dir="vc-hunter-v2/data/raw/vcs", sample_size=10):
+        self.vc_urls = vc_urls
         self.output_dir = output_dir
         self.sample_size = sample_size
-        self.timeout_ms = timeout_ms
-        self.max_retries = max_retries
-        self.wait_after_navigation = wait_after_navigation
-        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
 
-    def run(self, vc_urls):
-        all_data = []
-        errors = []
+    def extract_links(self, page):
+        page.wait_for_timeout(3000)
+        for _ in range(8):  # simulate scrolling to load JS content
+            page.mouse.wheel(0, 1000)
+            page.wait_for_timeout(1000)
+        anchors = page.query_selector_all("a")
+        hrefs = set()
+        for anchor in anchors:
+            href = anchor.get_attribute("href")
+            if href and href.startswith("http"):
+                hrefs.add(href)
+        return list(hrefs)
+
+    def scrape_company(self, page, url):
+        for attempt in range(2):
+            try:
+                page.goto(url, timeout=20000)
+                page.wait_for_timeout(2000)
+                title = page.title()
+                html = page.content()
+                text = page.inner_text("body")
+                if not text.strip():
+                    raise ValueError("Empty body text")
+                return {"title": title, "raw_html": html, "text": text}
+            except Exception as e:
+                if attempt == 1:
+                    raise e
+                page.wait_for_timeout(2000)
+
+    def run(self):
+        successes = []
+        failures = []
 
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
+            page = context.new_page()
 
-            for vc_url in vc_urls:
+            for vc_url in self.vc_urls:
                 print(f"🔍 Visiting {vc_url}")
-                page = context.new_page()
-
                 try:
-                    page.goto(vc_url, timeout=self.timeout_ms)
-                    portfolio_links = self.extract_portfolio_links(page)
+                    page.goto(vc_url, timeout=20000)
+                except PlaywrightTimeoutError:
+                    print(f"[ERROR] Timeout while visiting {vc_url}")
+                    continue
 
-                    if not portfolio_links:
-                        print(f"[WARN] No portfolio links found at {vc_url}")
-                        continue
+                all_links = self.extract_links(page)
+                print(f"🔗 Discovered {len(all_links)} portfolio links on {vc_url}")
 
-                    print(f"🔗 Discovered {len(portfolio_links)} portfolio links on {vc_url}")
+                portfolio_links = [
+                    link for link in all_links
+                    if not any(domain in link for domain in ["linkedin", "twitter", "termly", "login", "auth", "x.com"])
+                ]
 
-                    sample = random.sample(portfolio_links, min(len(portfolio_links), self.sample_size))
-                    scraped_count = 0
+                sample = (
+                    portfolio_links
+                    if len(portfolio_links) <= 100
+                    else random.sample(portfolio_links, min(self.sample_size, len(portfolio_links)))
+                )
 
-                    for company_url in sample:
-                        print(f"📥 Visiting portfolio page: {company_url}")
-                        result = self.scrape_company(context, company_url)
-
-                        if not result["text"]:
-                            print(f"[WARN] Skipping {company_url} due to empty content.")
-                            errors.append({"url": company_url, "reason": "empty content"})
-                            continue
-
-                        all_data.append({
+                for link in sample:
+                    print(f"📥 Visiting portfolio page: {link}")
+                    try:
+                        result = self.scrape_company(page, link)
+                        successes.append({
                             "source": vc_url,
                             "type": "portfolio_shallow",
-                            "company_url": company_url,
-                            "content": result["text"],
-                            "title": result["title"],
-                            "raw_html": result["raw_html"],
+                            "company_url": link,
+                            "content": result.get("text"),
+                            "title": result.get("title"),
+                            "raw_html": result.get("raw_html"),
                         })
-                        scraped_count += 1
+                    except Exception as e:
+                        print(f"[ERROR] Could not scrape company page: {link} — {e}")
+                        failures.append({"url": link, "error": str(e)})
 
-                    print(f"✅ Scraped {scraped_count} records from {vc_url}")
-
-                except Exception as e:
-                    print(f"[ERROR] Failed to process VC site: {vc_url} — {e}")
-                    errors.append({"url": vc_url, "reason": str(e)})
-
-            self.save_jsonl("vc_scraped_data.jsonl", all_data)
-            self.save_json("scrape_errors.json", errors)
             browser.close()
 
-        print(f"✅ Finished. Saved {len(all_data)} records to {self.output_dir}/vc_scraped_data.jsonl")
-        print(f"⚠️  {len(errors)} errors saved to {self.output_dir}/scrape_errors.json")
+        jsonl_path = os.path.join(self.output_dir, "vc_scraped_data.jsonl")
+        with open(jsonl_path, "w") as f:
+            for entry in successes:
+                f.write(json.dumps(entry) + "\n")
 
-    def extract_portfolio_links(self, page):
-        anchors = page.query_selector_all("a[href]")
-        links = [a.get_attribute("href") for a in anchors if a.get_attribute("href")]
-        full_links = [link for link in links if link.startswith("http")]
-        return list(set(full_links))
+        error_path = os.path.join(self.output_dir, "scrape_errors.json")
+        with open(error_path, "w") as f:
+            json.dump(failures, f, indent=2)
 
-    def scrape_company(self, context, company_url):
-        for attempt in range(self.max_retries):
-            page = context.new_page()
-            try:
-                page.goto(company_url, timeout=self.timeout_ms)
-                time.sleep(self.wait_after_navigation / 1000)
-                text = page.text_content("body") or ""
-                title = page.title()
-                raw_html = page.content()
-                return {"text": text.strip(), "title": title, "raw_html": raw_html}
-            except PlaywrightTimeoutError:
-                print(f"[ERROR] Could not scrape company page: {company_url} — Timeout while visiting {company_url}")
-            except Exception as e:
-                print(f"[ERROR] Could not scrape company page: {company_url} — {str(e)}")
-            finally:
-                page.close()
-        return {"text": "", "title": "", "raw_html": ""}
+        summary_path = os.path.join(self.output_dir, "scrape_summary.txt")
+        with open(summary_path, "w") as f:
+            f.write(f"✅ Scraped {len(successes)} records from {self.vc_urls[0]}\n")
+            f.write(f"❌ Failed: {len(failures)} records\n")
+            if failures:
+                f.write("❌ Failures by URL:\n")
+                for fail in failures:
+                    f.write(f"- {fail['url']}: {fail['error']}\n")
 
-    def save_jsonl(self, filename, data):
-        path = os.path.join(self.output_dir, filename)
-        with open(path, "w", encoding="utf-8") as f:
-            for record in data:
-                f.write(json.dumps(record) + "\n")
-
-    def save_json(self, filename, data):
-        path = os.path.join(self.output_dir, filename)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        print(f"✅ Finished. Saved {len(successes)} records to {jsonl_path}")
+        if failures:
+            print(f"⚠️  {len(failures)} errors saved to {error_path}")
+            print(f"📄 Summary written to {summary_path}")

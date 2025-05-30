@@ -47,12 +47,11 @@ class VCScraperAgent:
             last_height = new_height
 
     def _find_portfolio_links(self, page):
-        selector = "a[href^='/companies/']"
-        anchors = page.query_selector_all(selector)
+        anchors = page.query_selector_all("a")
         unique_links = set()
         for a in anchors:
             href = a.get_attribute("href")
-            if href:
+            if href and ("/companies/" in href or "/portfolio/" in href):
                 full_url = urljoin(self.base_url, href)
                 unique_links.add(full_url)
         return list(unique_links)
@@ -61,7 +60,7 @@ class VCScraperAgent:
         page = context.new_page()
         try:
             page.goto(url, timeout=15000)
-            time.sleep(1.5)
+            time.sleep(2)
             raw_html = page.content()
             ext_links = [a.get_attribute("href") for a in page.query_selector_all("a[href^='http']") if a.get_attribute("href") and self.base_url not in a.get_attribute("href")]
             ext_link = ext_links[0] if ext_links else None
